@@ -1,8 +1,7 @@
 """
 RunPod Serverless handler — vLLM worker cho chatbot thư ký.
 
-Cold start: load model 1 lần.
-Mỗi job: nhận prompt/messages → sinh response.
+Cold start: lazy init model trong handler đầu tiên (tránh CUDA fork issue).
 
 Input schema:
     {
@@ -26,11 +25,16 @@ Output:
     }
 """
 import os
+import multiprocessing as mp
+
+# PHẢI set trước khi import vllm/torch — tránh "Cannot re-initialize CUDA in forked subprocess"
+mp.set_start_method("spawn", force=True)
+
 import runpod
 from vllm import LLM, SamplingParams
 
 # ───────────────────────────────────────────────
-# Cold-start: load model 1 lần
+# Config từ env
 # ───────────────────────────────────────────────
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B-Instruct")
 MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "16384"))
@@ -38,22 +42,30 @@ GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.92"))
 DTYPE = os.getenv("DTYPE", "auto")
 TRUST_REMOTE_CODE = os.getenv("TRUST_REMOTE_CODE", "true").lower() == "true"
 
-print(f"[handler] Loading model {MODEL_NAME} ...")
-llm = LLM(
-    model=MODEL_NAME,
-    max_model_len=MAX_MODEL_LEN,
-    gpu_memory_utilization=GPU_MEM_UTIL,
-    dtype=DTYPE,
-    trust_remote_code=TRUST_REMOTE_CODE,
-)
-tokenizer = llm.get_tokenizer()
-print(f"[handler] Model ready.")
+# Lazy globals — init bên trong handler để không touch CUDA ở import time
+llm = None
+tokenizer = None
 
 
-# ───────────────────────────────────────────────
-# Job handler
-# ───────────────────────────────────────────────
+def init_model():
+    """Load model 1 lần duy nhất khi handler đầu tiên chạy."""
+    global llm, tokenizer
+    if llm is None:
+        print(f"[handler] Loading model {MODEL_NAME} ...")
+        llm = LLM(
+            model=MODEL_NAME,
+            max_model_len=MAX_MODEL_LEN,
+            gpu_memory_utilization=GPU_MEM_UTIL,
+            dtype=DTYPE,
+            trust_remote_code=TRUST_REMOTE_CODE,
+        )
+        tokenizer = llm.get_tokenizer()
+        print("[handler] Model ready.")
+
+
 def handler(event):
+    init_model()
+
     job_input = event.get("input", {}) or {}
     messages = job_input.get("messages")
     prompt = job_input.get("prompt", "")
@@ -70,7 +82,6 @@ def handler(event):
                 enable_thinking=thinking_mode,
             )
         except TypeError:
-            # tokenizer chưa support enable_thinking
             text = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
@@ -96,7 +107,5 @@ def handler(event):
     }
 
 
-# ───────────────────────────────────────────────
-# Start serverless loop
-# ───────────────────────────────────────────────
-runpod.serverless.start({"handler": handler})
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
