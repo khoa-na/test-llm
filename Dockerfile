@@ -1,5 +1,6 @@
-# vLLM official image — đã có CUDA + Python + vLLM optimized
-FROM vllm/vllm-openai:latest
+# vLLM official image — pin CUDA 12.9 vì RunPod GPU node chưa hỗ trợ CUDA 13
+# `:latest` hiện build với CUDA 13.0 → nvidia-container-cli reject trên host driver < 580
+FROM vllm/vllm-openai:v0.21.0-cu129-ubuntu2404
 
 # Bỏ entrypoint mặc định của vLLM (chạy OpenAI server) để dùng handler riêng
 ENTRYPOINT []
