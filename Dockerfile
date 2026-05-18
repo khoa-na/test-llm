@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY handler.py /app/
 
 # Optional: preload model vào image (bỏ comment nếu muốn cold start nhanh hơn)
-# ARG MODEL_NAME=Qwen/Qwen3-8B
+# ARG MODEL_NAME=Qwen/Qwen3.5-9B-Instruct
 # RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${MODEL_NAME}')"
 
 CMD ["python3", "-u", "handler.py"]
