@@ -33,8 +33,8 @@ Custom vLLM serverless worker để chạy LLM cho chatbot thư ký (Qwen3-8B, Q
    - **FlashBoot**: ON
 7. **Environment Variables**:
    ```
-   MODEL_NAME=Qwen/Qwen3-8B
-   MAX_MODEL_LEN=16384
+   MODEL_NAME=Qwen/Qwen3.5-9B-Instruct
+   MAX_MODEL_LEN=32768
    GPU_MEMORY_UTILIZATION=0.92
    TRUST_REMOTE_CODE=true
    ```
@@ -43,8 +43,8 @@ Custom vLLM serverless worker để chạy LLM cho chatbot thư ký (Qwen3-8B, Q
 ### Cách 2: Build local + push Docker image
 
 ```bash
-docker build -t <dockerhub-user>/test-llm-worker:qwen3-8b .
-docker push <dockerhub-user>/test-llm-worker:qwen3-8b
+docker build -t <dockerhub-user>/test-llm-worker:qwen3.5-9b .
+docker push <dockerhub-user>/test-llm-worker:qwen3.5-9b
 ```
 
 Rồi tạo endpoint với image này.
@@ -75,8 +75,8 @@ Mỗi model = 1 endpoint riêng, deploy cùng repo nhưng đổi `MODEL_NAME` tr
 
 | Endpoint | MODEL_NAME | GPU recommend |
 |---|---|---|
+| qwen3.5-9b (default) | `Qwen/Qwen3.5-9B-Instruct` | 24GB |
 | qwen3-8b | `Qwen/Qwen3-8B` | 24GB |
-| qwen3.5-9b | `Qwen/Qwen3.5-9B-Instruct` | 24GB |
 | gemma4-e4b | `google/gemma-4-e4b-it` | 16GB (cần HF_TOKEN) |
 | deepseek-r1-qwen3-8b | `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B` | 24GB |
 

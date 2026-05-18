@@ -32,7 +32,7 @@ from vllm import LLM, SamplingParams
 # ───────────────────────────────────────────────
 # Cold-start: load model 1 lần
 # ───────────────────────────────────────────────
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-8B")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B-Instruct")
 MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "16384"))
 GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.92"))
 DTYPE = os.getenv("DTYPE", "auto")
