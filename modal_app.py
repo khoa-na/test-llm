@@ -17,9 +17,11 @@ import modal
 # Config
 # ───────────────────────────────────────────────
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B")
-MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "8192"))
-GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.92"))
-DTYPE = os.getenv("DTYPE", "auto")
+MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "4096"))           # A10G 24GB chật, để 4096 cho an toàn
+GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.90")) # chừa headroom KV cache
+DTYPE = os.getenv("DTYPE", "bfloat16")
+ENFORCE_EAGER = os.getenv("ENFORCE_EAGER", "true").lower() == "true"  # skip CUDA graphs → save ~2GB
+MAX_NUM_SEQS = int(os.getenv("MAX_NUM_SEQS", "4"))                # batch nhỏ cho A10G
 GPU_TYPE = os.getenv("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
 
 # ───────────────────────────────────────────────
@@ -93,11 +95,15 @@ class LLMServer:
         else:
             print("[modal] No HF_TOKEN — chỉ download được model public.", flush=True)
         print(f"[modal] Loading {MODEL_NAME} on {GPU_TYPE} ...", flush=True)
+        print(f"[modal]   max_model_len={MAX_MODEL_LEN} gpu_mem={GPU_MEM_UTIL} "
+              f"enforce_eager={ENFORCE_EAGER} max_num_seqs={MAX_NUM_SEQS}", flush=True)
         self.llm = LLM(
             model=MODEL_NAME,
             max_model_len=MAX_MODEL_LEN,
             gpu_memory_utilization=GPU_MEM_UTIL,
+            max_num_seqs=MAX_NUM_SEQS,
             dtype=DTYPE,
+            enforce_eager=ENFORCE_EAGER,
             trust_remote_code=True,
         )
         self.tokenizer = self.llm.get_tokenizer()
