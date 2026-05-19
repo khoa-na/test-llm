@@ -53,7 +53,7 @@ from vllm import LLM, SamplingParams
 # ───────────────────────────────────────────────
 # Config từ env (đã giảm conservative cho 24GB GPU + V1 engine)
 # ───────────────────────────────────────────────
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B-Instruct")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B")
 MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "4096"))            # giảm từ 8192 để tránh OOM V1
 GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.85"))  # giảm từ 0.88, V1 cần dư
 MAX_NUM_SEQS = int(os.getenv("MAX_NUM_SEQS", "4"))                 # batch size nhỏ cho stability
