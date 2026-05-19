@@ -29,6 +29,8 @@ image = (
     modal.Image.from_registry(
         "vllm/vllm-openai:v0.21.0-cu129-ubuntu2404",
         add_python=None,  # image đã có python 3.12 (nhưng chỉ binary python3)
+        # vLLM image có ENTRYPOINT ["vllm"] → chặn Modal container entrypoint. Clear nó.
+        setup_dockerfile_commands=["ENTRYPOINT []"],
     )
     # Modal gọi `python -m pip ...` — image chỉ có python3 → symlink trước.
     .run_commands("ln -sf $(which python3) /usr/local/bin/python")
