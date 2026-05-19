@@ -41,8 +41,11 @@ image = (
     })
 )
 
-# Volume cache HuggingFace — model weights chỉ download 1 lần
+# Volumes cache:
+#   - hf-cache: model weights (download 1 lần từ HF)
+#   - vllm-cache: torch.compile + CUDA graph artifacts (compile 1 lần)
 hf_cache = modal.Volume.from_name("hf-cache", create_if_missing=True)
+vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
 
 app = modal.App("test-llm-chatbot-thuky")
 
@@ -53,17 +56,30 @@ app = modal.App("test-llm-chatbot-thuky")
 @app.cls(
     image=image,
     gpu=GPU_TYPE,
-    volumes={"/root/.cache/huggingface": hf_cache},
-    scaledown_window=120,  # idle 120s → tắt → $0
+    volumes={
+        "/root/.cache/huggingface": hf_cache,
+        "/root/.cache/vllm": vllm_cache,
+    },
+    enable_memory_snapshot=True,  # CPU snapshot — skip imports nặng ở cold start sau
+    scaledown_window=120,          # idle 120s → tắt → $0
     timeout=600,
     min_containers=0,
 )
 class LLMServer:
-    @modal.enter()
-    def load(self):
-        """Cold start: load model 1 lần."""
+    @modal.enter(snap=True)
+    def load_imports(self):
+        """Pre-snapshot (CPU only): chạy imports nặng. KHÔNG được đụng GPU/CUDA ở đây."""
+        print(f"[modal] [snap] Importing vllm/transformers ...", flush=True)
+        import vllm  # noqa: F401
+        import transformers  # noqa: F401
+        # Tuyệt đối không gọi torch.cuda.is_available() — sẽ init CUDA và phá snapshot.
+        print("[modal] [snap] Imports done — ready to snapshot.", flush=True)
+
+    @modal.enter(snap=False)
+    def load_model(self):
+        """Post-snapshot (GPU available): load weights lên VRAM."""
         from vllm import LLM
-        print(f"[modal] Loading {MODEL_NAME} on {GPU_TYPE} ...")
+        print(f"[modal] Loading {MODEL_NAME} on {GPU_TYPE} ...", flush=True)
         self.llm = LLM(
             model=MODEL_NAME,
             max_model_len=MAX_MODEL_LEN,
@@ -72,7 +88,7 @@ class LLMServer:
             trust_remote_code=True,
         )
         self.tokenizer = self.llm.get_tokenizer()
-        print("[modal] Model ready.")
+        print("[modal] Model ready.", flush=True)
 
     @modal.method()
     def generate(
