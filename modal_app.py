@@ -64,6 +64,7 @@ app = modal.App("test-llm-chatbot-thuky")
         "/root/.cache/huggingface": hf_cache,
         "/root/.cache/vllm": vllm_cache,
     },
+    secrets=[modal.Secret.from_name("huggingface")],  # inject HF_TOKEN env var
     enable_memory_snapshot=True,  # CPU snapshot — skip imports nặng ở cold start sau
     scaledown_window=120,          # idle 120s → tắt → $0
     timeout=600,
@@ -83,6 +84,14 @@ class LLMServer:
     def load_model(self):
         """Post-snapshot (GPU available): load weights lên VRAM."""
         from vllm import LLM
+        # Mirror HF_TOKEN sang HUGGING_FACE_HUB_TOKEN (huggingface_hub check cả 2).
+        hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+        if hf_token:
+            os.environ["HF_TOKEN"] = hf_token
+            os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+            print(f"[modal] HF_TOKEN detected: {hf_token[:6]}...{hf_token[-4:]}", flush=True)
+        else:
+            print("[modal] No HF_TOKEN — chỉ download được model public.", flush=True)
         print(f"[modal] Loading {MODEL_NAME} on {GPU_TYPE} ...", flush=True)
         self.llm = LLM(
             model=MODEL_NAME,
