@@ -17,7 +17,7 @@ import modal
 # Config
 # ───────────────────────────────────────────────
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B")
-MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "32768"))
+MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "8192"))
 GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.92"))
 DTYPE = os.getenv("DTYPE", "auto")
 GPU_TYPE = os.getenv("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
