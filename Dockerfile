@@ -34,8 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ───────────────────────────────────────────────
 RUN pip install --upgrade pip wheel setuptools && \
     pip install \
-        "vllm>=0.21.0" \
-        "transformers>=4.55" \
+        "vllm==0.21.0" \
+        "transformers>=4.55,<5.0" \
         "runpod>=1.7.0" \
         "hf_transfer>=0.1.8"
 
