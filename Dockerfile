@@ -1,27 +1,30 @@
-# vLLM official image — pin CUDA 12.9
+# vLLM official image — pin CUDA 12.4 cho RunPod GPU node có driver cũ.
 #
-# Lưu ý:
-#   - `:latest` HIỆN TẠI vẫn build với CUDA 13.0 → RunPod node driver < 580 sẽ reject.
-#   - v0.20.1+ chỉ phát hành dạng cu129 (CUDA 12.9), driver >= 555 chạy được.
-#   - Nếu RunPod node vẫn báo lỗi cuda mismatch, fallback xuống cu124 bằng cách
-#     đổi FROM thành: vllm/vllm-openai:v0.20.0-cu129-ubuntu2404
-#     Hoặc tự build từ NVIDIA base: FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
-FROM vllm/vllm-openai:v0.21.0-cu129-ubuntu2404
+# Lịch sử CUDA của vLLM official image:
+#   - v0.21.0+         → CUDA 12.9 (cu129)            cần driver >= 555
+#   - v0.14.0–v0.20.x  → CUDA 13.0 (cu130)            cần driver >= 580
+#   - v0.13.0 trở xuống → CUDA 12.4 (cu124, mặc định)  cần driver >= 550
+#
+# RunPod nodes của bạn báo "cuda>=12.9 unsatisfied" → driver hỗ trợ tối đa
+# CUDA 12.4 hoặc 12.6. Dùng v0.13.0 là lựa chọn ổn định nhất.
+#
+# Note: vLLM v0.13.0 (Dec 2025) chưa biết Qwen3.5 (Mar 2026), nhưng
+# với trust_remote_code=True, transformers tự download modeling_qwen3.py
+# từ HF repo → vẫn load được.
+FROM vllm/vllm-openai:v0.13.0
 
 # Bỏ entrypoint mặc định của vLLM (chạy OpenAI server) để dùng handler riêng
 ENTRYPOINT []
 
 WORKDIR /app
 
-# Cài runpod SDK
+# Cài runpod SDK + hf_transfer (tăng tốc download)
+# Update transformers lên bản mới hơn để hỗ trợ Qwen3.5 / Gemma 4 native
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade "transformers>=4.50"
 
 # Copy handler
 COPY handler.py /app/
-
-# Optional: preload model vào image (bỏ comment nếu muốn cold start nhanh hơn)
-# ARG MODEL_NAME=Qwen/Qwen3.5-9B-Instruct
-# RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${MODEL_NAME}')"
 
 CMD ["python3", "-u", "handler.py"]
