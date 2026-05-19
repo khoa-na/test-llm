@@ -16,7 +16,7 @@ import modal
 # ───────────────────────────────────────────────
 # Config
 # ───────────────────────────────────────────────
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B-Instruct")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B")
 MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "32768"))
 GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.92"))
 DTYPE = os.getenv("DTYPE", "auto")
@@ -26,15 +26,18 @@ GPU_TYPE = os.getenv("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
 # Container image (Modal tự build trên cloud)
 # ───────────────────────────────────────────────
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.from_registry(
+        "vllm/vllm-openai:v0.21.0-cu129-ubuntu2404",
+        add_python=None,  # image đã có python 3.12
+    )
+    # Modal không chạy entrypoint của image — Modal Function tự spawn python process
     .pip_install(
-        "vllm==0.8.5",
-        "transformers>=4.45",
-        "huggingface_hub[hf_transfer]",
+        "huggingface_hub[hf_transfer]>=0.26",
     )
     .env({
-        "HF_HUB_ENABLE_HF_TRANSFER": "1",  # download model nhanh hơn 5-10x
-        "VLLM_USE_V1": "1",
+        "HF_HUB_ENABLE_HF_TRANSFER": "1",  # download model nhanh 5-10x
+        # V1 engine là default từ vLLM 0.20+, không cần set
+        "VLLM_NO_USAGE_STATS": "1",
     })
 )
 
