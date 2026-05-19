@@ -1,7 +1,7 @@
 """
 RunPod Serverless handler — vLLM worker cho chatbot thư ký.
 
-Cold start: lazy init model trong handler đầu tiên (tránh CUDA fork issue).
+Cold start: lazy init model trong handler đầu tiên.
 
 Input schema:
     {
@@ -15,20 +15,18 @@ Input schema:
         "thinking_mode": false
       }
     }
-
-Output:
-    {
-      "text": "...",
-      "prompt_tokens": N,
-      "completion_tokens": N,
-      "finish_reason": "stop"
-    }
 """
 import os
-import multiprocessing as mp
 
-# PHẢI set trước khi import vllm/torch — tránh "Cannot re-initialize CUDA in forked subprocess"
-mp.set_start_method("spawn", force=True)
+# ───────────────────────────────────────────────
+# vLLM stability env — set TRƯỚC khi import vllm
+# ───────────────────────────────────────────────
+# Default dùng V0 engine cho ổn định hơn V1 (V1 hay fail subprocess init trên RunPod)
+os.environ.setdefault("VLLM_USE_V1", "0")
+# Worker multiproc method — KHÔNG dùng "fork" (CUDA fork conflict)
+os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+# Tăng timeout init engine (RunPod cold start chậm)
+os.environ.setdefault("VLLM_ENGINE_ITERATION_TIMEOUT_S", "600")
 
 import runpod
 from vllm import LLM, SamplingParams
@@ -37,30 +35,38 @@ from vllm import LLM, SamplingParams
 # Config từ env
 # ───────────────────────────────────────────────
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B-Instruct")
-MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "16384"))
-GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.92"))
-DTYPE = os.getenv("DTYPE", "auto")
+MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "8192"))           # giảm để tránh OOM KV cache
+GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.88"))  # giảm để có headroom
+DTYPE = os.getenv("DTYPE", "bfloat16")                            # explicit bf16, tránh auto detect lỗi
 TRUST_REMOTE_CODE = os.getenv("TRUST_REMOTE_CODE", "true").lower() == "true"
+ENFORCE_EAGER = os.getenv("ENFORCE_EAGER", "true").lower() == "true"  # bỏ CUDA graph → ổn định hơn
+QUANTIZATION = os.getenv("QUANTIZATION", "").strip() or None      # None | awq | gptq | fp8
 
-# Lazy globals — init bên trong handler để không touch CUDA ở import time
+# Lazy globals
 llm = None
 tokenizer = None
 
 
 def init_model():
-    """Load model 1 lần duy nhất khi handler đầu tiên chạy."""
     global llm, tokenizer
     if llm is None:
-        print(f"[handler] Loading model {MODEL_NAME} ...")
-        llm = LLM(
+        print(f"[handler] Loading {MODEL_NAME}", flush=True)
+        print(f"[handler]   max_model_len={MAX_MODEL_LEN} gpu_mem_util={GPU_MEM_UTIL}", flush=True)
+        print(f"[handler]   dtype={DTYPE} enforce_eager={ENFORCE_EAGER} quant={QUANTIZATION}", flush=True)
+        kwargs = dict(
             model=MODEL_NAME,
             max_model_len=MAX_MODEL_LEN,
             gpu_memory_utilization=GPU_MEM_UTIL,
             dtype=DTYPE,
             trust_remote_code=TRUST_REMOTE_CODE,
+            enforce_eager=ENFORCE_EAGER,
+            disable_log_stats=True,
         )
+        if QUANTIZATION:
+            kwargs["quantization"] = QUANTIZATION
+        llm = LLM(**kwargs)
         tokenizer = llm.get_tokenizer()
-        print("[handler] Model ready.")
+        print("[handler] Model ready.", flush=True)
 
 
 def handler(event):
@@ -72,7 +78,6 @@ def handler(event):
     sp_dict = job_input.get("sampling_params") or {}
     thinking_mode = bool(job_input.get("thinking_mode", False))
 
-    # Build prompt string
     if messages:
         try:
             text = tokenizer.apply_chat_template(
