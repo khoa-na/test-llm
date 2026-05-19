@@ -28,6 +28,21 @@ os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 # Tăng timeout init engine (RunPod cold start chậm)
 os.environ.setdefault("VLLM_ENGINE_ITERATION_TIMEOUT_S", "600")
 
+# ───────────────────────────────────────────────
+# HuggingFace download
+# ───────────────────────────────────────────────
+# Bật hf_transfer cho tốc độ download model nhanh hơn 5-10x (cần thư viện đi kèm).
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+# RunPod inject secret HF_TOKEN tự động. HF SDK đọc cả HF_TOKEN lẫn HUGGING_FACE_HUB_TOKEN,
+# nhưng vLLM/transformers ưu tiên HUGGING_FACE_HUB_TOKEN → mirror sang biến đó nếu chưa có.
+_hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+if _hf_token:
+    os.environ["HF_TOKEN"] = _hf_token
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = _hf_token
+    print(f"[handler] HF_TOKEN detected: {_hf_token[:6]}...{_hf_token[-4:]}", flush=True)
+else:
+    print("[handler] No HF_TOKEN found — chỉ download được model public.", flush=True)
+
 import runpod
 from vllm import LLM, SamplingParams
 

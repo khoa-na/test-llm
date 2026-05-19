@@ -31,13 +31,19 @@ Custom vLLM serverless worker để chạy LLM cho chatbot thư ký (Qwen3-8B, Q
    - **Idle Timeout**: 60s
    - **Execution Timeout**: 600s
    - **FlashBoot**: ON
-7. **Environment Variables**:
+7. **Environment Variables** (Settings → Public env hoặc Secrets):
    ```
    MODEL_NAME=Qwen/Qwen3.5-9B-Instruct
-   MAX_MODEL_LEN=32768
-   GPU_MEMORY_UTILIZATION=0.92
+   MAX_MODEL_LEN=8192
+   GPU_MEMORY_UTILIZATION=0.88
    TRUST_REMOTE_CODE=true
+   ENFORCE_EAGER=true
    ```
+8. **Secrets** (Settings → Secrets — KHÔNG để Public env):
+   ```
+   HF_TOKEN=hf_xxxxxxxxxxxxxxxx
+   ```
+   → Token download model nhanh + truy cập model gated (Gemma).
 8. Deploy → đợi build ~10-15 phút lần đầu
 
 ### Cách 2: Build local + push Docker image
