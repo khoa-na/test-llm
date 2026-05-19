@@ -17,24 +17,28 @@ Input schema:
     }
 """
 import os
+import warnings
 
 # ───────────────────────────────────────────────
 # vLLM stability env — set TRƯỚC khi import vllm
 # ───────────────────────────────────────────────
-# Default dùng V0 engine cho ổn định hơn V1 (V1 hay fail subprocess init trên RunPod)
-os.environ.setdefault("VLLM_USE_V1", "0")
-# Worker multiproc method — KHÔNG dùng "fork" (CUDA fork conflict)
-os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
-# Tăng timeout init engine (RunPod cold start chậm)
+# vLLM 0.20+ chỉ còn V1 engine, V0 đã bị xóa. Vẫn giữ multiproc=spawn để
+# tránh CUDA fork issue.
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+# Tăng timeout cho engine subprocess khởi động (model 18GB load lâu)
 os.environ.setdefault("VLLM_ENGINE_ITERATION_TIMEOUT_S", "600")
+# Tăng timeout RPC giữa subprocess (default 5s, quá ngắn cho first load)
+os.environ.setdefault("VLLM_RPC_TIMEOUT", "60000")
+# Tắt log stats spam
+os.environ.setdefault("VLLM_NO_USAGE_STATS", "1")
+
+# Bớt warning spam khi prompt ngắn
+warnings.filterwarnings("ignore", message=".*Input tensor shape suggests.*")
 
 # ───────────────────────────────────────────────
 # HuggingFace download
 # ───────────────────────────────────────────────
-# Bật hf_transfer cho tốc độ download model nhanh hơn 5-10x (cần thư viện đi kèm).
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
-# RunPod inject secret HF_TOKEN tự động. HF SDK đọc cả HF_TOKEN lẫn HUGGING_FACE_HUB_TOKEN,
-# nhưng vLLM/transformers ưu tiên HUGGING_FACE_HUB_TOKEN → mirror sang biến đó nếu chưa có.
 _hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 if _hf_token:
     os.environ["HF_TOKEN"] = _hf_token
@@ -47,15 +51,16 @@ import runpod
 from vllm import LLM, SamplingParams
 
 # ───────────────────────────────────────────────
-# Config từ env
+# Config từ env (đã giảm conservative cho 24GB GPU + V1 engine)
 # ───────────────────────────────────────────────
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B-Instruct")
-MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "8192"))           # giảm để tránh OOM KV cache
-GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.88"))  # giảm để có headroom
-DTYPE = os.getenv("DTYPE", "bfloat16")                            # explicit bf16, tránh auto detect lỗi
+MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "4096"))            # giảm từ 8192 để tránh OOM V1
+GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.85"))  # giảm từ 0.88, V1 cần dư
+MAX_NUM_SEQS = int(os.getenv("MAX_NUM_SEQS", "4"))                 # batch size nhỏ cho stability
+DTYPE = os.getenv("DTYPE", "bfloat16")
 TRUST_REMOTE_CODE = os.getenv("TRUST_REMOTE_CODE", "true").lower() == "true"
-ENFORCE_EAGER = os.getenv("ENFORCE_EAGER", "true").lower() == "true"  # bỏ CUDA graph → ổn định hơn
-QUANTIZATION = os.getenv("QUANTIZATION", "").strip() or None      # None | awq | gptq | fp8
+ENFORCE_EAGER = os.getenv("ENFORCE_EAGER", "true").lower() == "true"
+QUANTIZATION = os.getenv("QUANTIZATION", "").strip() or None
 
 # Lazy globals
 llm = None
@@ -67,11 +72,13 @@ def init_model():
     if llm is None:
         print(f"[handler] Loading {MODEL_NAME}", flush=True)
         print(f"[handler]   max_model_len={MAX_MODEL_LEN} gpu_mem_util={GPU_MEM_UTIL}", flush=True)
-        print(f"[handler]   dtype={DTYPE} enforce_eager={ENFORCE_EAGER} quant={QUANTIZATION}", flush=True)
+        print(f"[handler]   max_num_seqs={MAX_NUM_SEQS} dtype={DTYPE}", flush=True)
+        print(f"[handler]   enforce_eager={ENFORCE_EAGER} quant={QUANTIZATION}", flush=True)
         kwargs = dict(
             model=MODEL_NAME,
             max_model_len=MAX_MODEL_LEN,
             gpu_memory_utilization=GPU_MEM_UTIL,
+            max_num_seqs=MAX_NUM_SEQS,
             dtype=DTYPE,
             trust_remote_code=TRUST_REMOTE_CODE,
             enforce_eager=ENFORCE_EAGER,
