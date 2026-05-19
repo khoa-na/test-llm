@@ -28,8 +28,10 @@ GPU_TYPE = os.getenv("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
 image = (
     modal.Image.from_registry(
         "vllm/vllm-openai:v0.21.0-cu129-ubuntu2404",
-        add_python=None,  # image đã có python 3.12
+        add_python=None,  # image đã có python 3.12 (nhưng chỉ binary python3)
     )
+    # Modal gọi `python -m pip ...` — image chỉ có python3 → symlink trước.
+    .run_commands("ln -sf $(which python3) /usr/local/bin/python")
     # Modal không chạy entrypoint của image — Modal Function tự spawn python process
     .pip_install(
         "huggingface_hub[hf_transfer]>=0.26",
