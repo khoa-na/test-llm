@@ -105,6 +105,9 @@ class LLMServer:
             dtype=DTYPE,
             enforce_eager=ENFORCE_EAGER,
             trust_remote_code=True,
+            # Tắt vision/audio encoder của Qwen3.5 (mặc định multimodal).
+            # Use case của mình text-only → save ~50-70s engine init + ~3-4GB VRAM cho KV cache.
+            limit_mm_per_prompt={"image": 0, "video": 0},
         )
         self.tokenizer = self.llm.get_tokenizer()
         print("[modal] Model ready.", flush=True)
