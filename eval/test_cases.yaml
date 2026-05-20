@@ -1,37 +1,20 @@
 # ===============================================================
-# Test Cases — Chatbot Thư Ký
+# Test Cases — Chatbot Thư Ký (Cập nhật nhất quán với v3 Spec)
 # ===============================================================
-# Mục tiêu: 45 cases phản ánh hành vi sếp THẬT (gõ ngắn, voice-to-text,
-# imperative, reference vague), cover toàn bộ TC-01..TC-10 + các UC chính.
-#
-# 3 phân loại test:
+# Phân loại test:
 #   (A) Realistic UC — sếp query tự nhiên, không inject data
-#   (B) Reasoning-with-data — inject data trong prompt để test khả năng
-#       suy luận (đánh dấu type: reasoning_with_data)
+#   (B) Reasoning-with-data — inject data trong prompt để test khả năng suy luận
 #   (C) Robustness — edge case, no-diacritics, push back, mâu thuẫn
 #
-# Schema:
-#   id: unique
-#   use_case: UC-xx
-#   criteria: list TC (accuracy, intent, multiturn, language, multilingual,
-#             temporal, latency, robustness, consistency)
-#   name: tên ngắn
-#   type: realistic | reasoning_with_data | robustness | edge
-#   language: vi | en | mixed
-#   thinking_mode: bool (default false)
-#   thinking_compare: bool — runner tự sinh thêm variant thinking=true
-#   rerun: int (default 1) — chạy N lần để đo consistency
-#   turns: [{role, content}, ...]
-#   expected:
-#     must_contain: list (case-insensitive substring)
-#     must_not_contain: list
-#     eval_notes: hint cho LLM judge
-#
-# Limitations đã acknowledge:
-#   - Không test Tầng 2 (bot chủ động/cron-triggered)
-#   - Không test long context >4K (setup MAX_MODEL_LEN=4096)
-#   - Không test multimodal (Gemma audio/image)
-#   - Không test structured tool calling
+# Tiêu chí đánh giá chuẩn (TC-xx):
+#   TC-01: Accuracy (Độ chính xác thông tin)
+#   TC-02: Intent Recognition (Nhận diện ý định)
+#   TC-03: Multi-turn Context Retention (Duy trì ngữ cảnh)
+#   TC-04: Language Quality (Văn phong & Ngữ pháp)
+#   TC-05: Multilingual Support (Hỗ trợ đa ngôn ngữ)
+#   TC-06: Temporal Reasoning (Lý luận thời gian)
+#   TC-08: Robustness (Xử lý ngoại lệ)
+#   TC-09: Consistency (Nhất quán)
 # ===============================================================
 
 system_prompt: |
@@ -47,7 +30,7 @@ test_cases:
   # ═════════════════════════════════════════════════════════════
   - id: T01.v1
     use_case: UC-01
-    criteria: [intent, temporal, robustness]
+    criteria: [TC-02, TC-06, TC-08]
     name: "Sếp gõ cụt: 'lịch hôm nay'"
     type: realistic
     language: vi
@@ -58,7 +41,7 @@ test_cases:
 
   - id: T01.v2
     use_case: UC-01
-    criteria: [intent, temporal, consistency]
+    criteria: [TC-02, TC-06, TC-09]
     name: "Paraphrase tuần này"
     type: realistic
     language: vi
@@ -70,7 +53,7 @@ test_cases:
 
   - id: T01.v3
     use_case: UC-01
-    criteria: [intent, robustness]
+    criteria: [TC-02, TC-08]
     name: "Voice-to-text không dấu"
     type: robustness
     language: vi
@@ -81,22 +64,22 @@ test_cases:
 
   - id: T01.v4
     use_case: UC-01
-    criteria: [intent, accuracy]
+    criteria: [TC-02, TC-01]
     name: "Hallucination guard — hỏi data không có"
     type: realistic
     language: vi
     turns:
       - {role: user, content: "lịch họp 14h chiều nay với ai vậy"}
     expected:
-      must_not_contain: ["anh", "chị", "phòng"]
-      eval_notes: "CRITICAL: bot KHÔNG được bịa tên người/địa điểm. Phải nói 'chưa có thông tin lịch 14h' hoặc tương tự."
+      must_not_contain: ["anh Nam", "chị Lan", "phòng họp A", "phòng họp B"]
+      eval_notes: "CRITICAL: bot KHÔNG được bịa tên người/địa điểm cụ thể. Phải nói chưa có thông tin lịch họp 14h."
 
   # ═════════════════════════════════════════════════════════════
   # DEADLINE (UC-02)
   # ═════════════════════════════════════════════════════════════
   - id: T02.v1
     use_case: UC-02
-    criteria: [intent, temporal]
+    criteria: [TC-02, TC-06]
     name: "Việc gì gấp tuần này"
     type: realistic
     language: vi
@@ -107,7 +90,7 @@ test_cases:
 
   - id: T02.v2
     use_case: UC-02
-    criteria: [intent]
+    criteria: [TC-02]
     name: "Task quá hạn"
     type: realistic
     language: vi
@@ -121,7 +104,7 @@ test_cases:
   # ═════════════════════════════════════════════════════════════
   - id: T03.v1
     use_case: UC-03
-    criteria: [intent, temporal, accuracy]
+    criteria: [TC-02, TC-06, TC-01]
     name: "Đặt lịch đầy đủ info"
     type: realistic
     language: vi
@@ -133,7 +116,7 @@ test_cases:
 
   - id: T03.v2
     use_case: UC-03
-    criteria: [temporal, robustness]
+    criteria: [TC-06, TC-08]
     name: "Voice-to-text đặt lịch"
     type: robustness
     language: vi
@@ -141,25 +124,25 @@ test_cases:
       - {role: user, content: "dat lich hop anh Tuan 10h sang mai"}
     expected:
       must_contain: ["Tuấn"]
-      eval_notes: "No-dấu vẫn hiểu được"
+      eval_notes: "No-dấu vẫn hiểu được và chuyển đổi đúng sang tiếng Việt chuẩn."
 
   - id: T03.v3
     use_case: UC-03
-    criteria: [robustness]
+    criteria: [TC-08]
     name: "Edge: thiếu info"
     type: robustness
     language: vi
     turns:
       - {role: user, content: "đặt lịch họp đi"}
     expected:
-      eval_notes: "Phải hỏi: với ai? khi nào? ở đâu? Không tự đoán."
+      eval_notes: "Phải hỏi rõ các thông tin còn thiếu: với ai? khi nào? ở đâu? Không tự đoán."
 
   # ═════════════════════════════════════════════════════════════
   # TẠO TO-DO (UC-04)
   # ═════════════════════════════════════════════════════════════
   - id: T04.v1
     use_case: UC-04
-    criteria: [intent, accuracy]
+    criteria: [TC-02, TC-01]
     name: "Task đầy đủ"
     type: realistic
     language: vi
@@ -167,11 +150,11 @@ test_cases:
       - {role: user, content: "tạo task gửi báo cáo Q2 cho HĐQT, deadline cuối tháng, ưu tiên cao, giao Minh kế toán"}
     expected:
       must_contain: ["Minh", "Q2"]
-      eval_notes: "Xác nhận task với đủ 4 fields"
+      eval_notes: "Xác nhận task với đủ 4 fields: tên task, deadline, mức ưu tiên, người phụ trách."
 
   - id: T04.v2
     use_case: UC-04
-    criteria: [robustness]
+    criteria: [TC-08]
     name: "Task thiếu info"
     type: robustness
     language: vi
@@ -179,11 +162,11 @@ test_cases:
       - {role: user, content: "nhắc tôi gọi Hùng"}
     expected:
       must_contain: ["Hùng"]
-      eval_notes: "Phải hỏi: khi nào? Hoặc đặt default rồi xác nhận."
+      eval_notes: "Phải hỏi thêm: khi nào cần nhắc? Không tự đặt mặc định khi chưa có xác nhận."
 
   - id: T04.v3
     use_case: UC-04
-    criteria: [intent]
+    criteria: [TC-02]
     name: "Reminder ngắn"
     type: realistic
     language: vi
@@ -191,92 +174,79 @@ test_cases:
       - {role: user, content: "9h sáng mai nhắc tôi gọi anh Hùng"}
     expected:
       must_contain: ["Hùng"]
-      eval_notes: "Self-reminder, parse temporal đúng"
+      eval_notes: "Self-reminder, parse temporal đúng ngày mai lúc 9h."
 
   # ═════════════════════════════════════════════════════════════
-  # MULTI-TURN (UC-16) — quan trọng nhất, weight 15%
+  # CẬP NHẬT TRẠNG THÁI CÔNG VIỆC (UC-05) - [NEW]
   # ═════════════════════════════════════════════════════════════
-  - id: T05.v1
-    use_case: UC-16
-    criteria: [multiturn, intent]
-    name: "4-turn đặt lịch tích lũy info"
+  - id: T15.v1
+    use_case: UC-05
+    criteria: [TC-02, TC-01]
+    name: "Đánh dấu hoàn thành task"
     type: realistic
     language: vi
     turns:
-      - {role: user, content: "đặt lịch họp với team kỹ thuật"}
-      - {role: assistant, content: "Vâng, anh muốn đặt khi nào ạ?"}
-      - {role: user, content: "thứ 5"}
-      - {role: assistant, content: "Thứ 5 này, mấy giờ ạ?"}
-      - {role: user, content: "10h sáng"}
-      - {role: assistant, content: "Vâng. Họp ở đâu ạ?"}
-      - {role: user, content: "phòng meeting B tầng 3"}
+      - {role: user, content: "Đánh dấu hoàn thành task họp hội đồng quản trị"}
     expected:
-      must_contain: ["team kỹ thuật", "10", "phòng"]
-      must_not_contain: ["với ai", "ngày nào", "thời gian nào"]
-      eval_notes: "Tổng hợp đủ 4 info, KHÔNG hỏi lại"
+      must_contain: ["hoàn thành", "hội đồng quản trị"]
+      eval_notes: "Xác nhận đã cập nhật trạng thái hoàn thành cho đúng task được chỉ định."
 
-  - id: T05.v2
-    use_case: UC-16
-    criteria: [multiturn]
-    name: "Đổi ý giữa chừng"
+  - id: T15.v2
+    use_case: UC-05
+    criteria: [TC-02, TC-06, TC-01]
+    name: "Hoãn task sang tuần sau"
     type: realistic
     language: vi
     turns:
-      - {role: user, content: "tạo task gửi báo cáo cho Minh deadline thứ 6"}
-      - {role: assistant, content: "Đã ghi. Task: gửi báo cáo / assignee: Minh / deadline: thứ 6."}
-      - {role: user, content: "đổi sang thứ 2 tuần sau"}
+      - {role: user, content: "Hoãn task chuẩn bị tài liệu dự án sang tuần sau giúp tôi"}
     expected:
-      must_contain: ["thứ 2", "Minh"]
-      eval_notes: "Update deadline, giữ assignee + content"
+      must_contain: ["hoãn", "tuần sau", "tài liệu"]
+      eval_notes: "Xác nhận hoãn và cập nhật thời hạn mới sang tuần sau."
 
-  - id: T05.v3
-    use_case: UC-16
-    criteria: [multiturn]
-    name: "Reference vague 'cuộc họp đó'"
-    type: realistic
+  # ═════════════════════════════════════════════════════════════
+  # ƯU TIÊN HÓA (UC-06)
+  # ═════════════════════════════════════════════════════════════
+  - id: T12.v1
+    use_case: UC-06
+    criteria: [TC-02, TC-01]
+    name: "Sắp xếp 8 task theo ưu tiên"
+    type: reasoning_with_data
     language: vi
+    thinking_compare: true
     turns:
-      - {role: user, content: "đặt lịch họp với CEO 14h thứ 4"}
-      - {role: assistant, content: "Đã đặt lịch họp với CEO, thứ 4, 14:00."}
-      - {role: user, content: "dời cuộc họp đó sang 15h đi"}
-    expected:
-      must_contain: ["15"]
-      must_not_contain: ["cuộc họp nào"]
-      eval_notes: "Hiểu 'cuộc họp đó' = họp CEO, không hỏi lại"
+      - role: user
+        content: |
+          giúp tôi sắp xếp 8 việc cần làm theo thứ tự ưu tiên:
+          1. Ký hợp đồng đối tác Singapore (deadline mai, blocking nhiều người)
+          2. Review CV ứng viên (deadline cuối tuần)
+          3. Trả lời email khách hàng X (đang chờ 2 ngày)
+          4. Họp 1-1 với cấp dưới (đã hoãn 1 lần)
+          5. Đọc báo cáo tài chính Q2 (deadline thứ 6)
+          6. Viết feedback cho team Design (low priority)
+          7. Xác nhận lịch họp BGĐ (deadline trong 2h)
+          8. Cập nhật LinkedIn (no deadline)
 
-  - id: T05.v4
-    use_case: UC-16
-    criteria: [multiturn, robustness]
-    name: "Push back — sếp không thích response"
-    type: realistic
-    language: vi
-    turns:
-      - {role: user, content: "soạn email xin lỗi khách hàng vì giao hàng trễ"}
-      - {role: assistant, content: "Kính gửi quý khách,\n\nChúng tôi thành thật xin lỗi vì sự chậm trễ trong việc giao hàng vừa qua. Đội ngũ của chúng tôi đã làm việc hết sức để khắc phục..."}
-      - {role: user, content: "viết lại ngắn hơn"}
+          giải thích lý do sắp xếp
     expected:
-      eval_notes: "Comply với feedback — version 2 phải ngắn hơn rõ rệt"
+      eval_notes: "Đưa ra danh sách sắp xếp logic: Ưu tiên cao nhất là việc gấp nhất và có tính blocking (7 và 1). Việc ít quan trọng nhất để cuối (8). Giải thích lý do hợp lý."
 
-  - id: T05.v5
-    use_case: UC-16
-    criteria: [multiturn]
-    name: "Chuyển ngữ cảnh đột ngột"
+  - id: T12.v2
+    use_case: UC-06
+    criteria: [TC-02, TC-08]
+    name: "Quá nhiều thông tin, model có sort tốt không"
     type: realistic
     language: vi
     turns:
-      - {role: user, content: "lịch họp BGĐ thứ 4 có chưa"}
-      - {role: assistant, content: "Tôi chưa có thông tin về lịch họp BGĐ thứ 4. Anh có thể cho biết thêm chi tiết không?"}
-      - {role: user, content: "à mà email khách hàng C đâu rồi"}
+      - {role: user, content: "tôi có 10 việc tồn đọng, giúp sắp xếp thứ tự"}
     expected:
-      must_not_contain: ["BGĐ", "thứ 4"]
-      eval_notes: "Switch topic sang email — không cố trả lời câu cũ"
+      eval_notes: "Phải yêu cầu cung cấp danh sách chi tiết các công việc, mức độ gấp và tầm quan trọng thay vì tự bịa việc."
 
   # ═════════════════════════════════════════════════════════════
   # TÓM TẮT EMAIL (UC-07)
   # ═════════════════════════════════════════════════════════════
   - id: T06.v1
     use_case: UC-07
-    criteria: [accuracy, language, intent]
+    criteria: [TC-01, TC-04, TC-02]
     name: "Tóm tắt forward email"
     type: realistic
     language: vi
@@ -301,25 +271,45 @@ test_cases:
     expected:
       must_contain: ["70%", "ngân sách"]
       must_not_contain: ["50%", "100%", "20%"]
-      eval_notes: "Đúng 3 ý: tiến độ 70%/chậm 2 tuần, budget 65%/vượt 8%, cần tuyển 1 senior. KHÔNG hallucinate số liệu khác."
+      eval_notes: "Trích xuất chính xác 3 ý cốt lõi: Tiến độ 70% (chậm 2 tuần), chi ngân sách 65% (nguy cơ vượt 8%), nhân sự cần 1 senior dev. Tuyệt đối không bịa số liệu."
 
   - id: T06.v2
     use_case: UC-07
-    criteria: [robustness]
+    criteria: [TC-08]
     name: "Edge: yêu cầu tóm tắt nhưng không paste content"
     type: robustness
     language: vi
     turns:
       - {role: user, content: "tóm tắt email cho tôi"}
     expected:
-      eval_notes: "Phải hỏi: email nào? cần paste nội dung."
+      eval_notes: "Yêu cầu người dùng cung cấp nội dung email cần tóm tắt."
+
+  # ═════════════════════════════════════════════════════════════
+  # TÌM KIẾM & TRUY XUẤT THÔNG TIN (UC-08) - [UPDATED WITH DATA]
+  # ═════════════════════════════════════════════════════════════
+  - id: T17.v1
+    use_case: UC-08
+    criteria: [TC-01, TC-02]
+    name: "Tìm thông tin cụ thể trong tài liệu cung cấp"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          Dưới đây là Biên bản họp tháng 3 với đối tác ABC:
+          "Thời gian: 15/03/2026. Nội dung thảo luận: Đối tác ABC đồng ý ký MOU vào ngày 22/03/2026. Đại diện ABC tham dự gồm ông Tan và bà Lee."
+
+          Tìm giúp tôi biên bản họp tháng 3 với ABC nói về ngày ký MOU là ngày nào?
+    expected:
+      must_contain: ["22/03/2026", "MOU"]
+      eval_notes: "Truy xuất chính xác ngày ký MOU là 22/03/2026 từ biên bản được cung cấp."
 
   # ═════════════════════════════════════════════════════════════
   # SOẠN EMAIL (UC-09) — kèm formality test
   # ═════════════════════════════════════════════════════════════
   - id: T07.v1
     use_case: UC-09
-    criteria: [language, accuracy]
+    criteria: [TC-04, TC-01]
     name: "Email formal gửi BGĐ"
     type: realistic
     language: vi
@@ -327,11 +317,11 @@ test_cases:
       - {role: user, content: "soạn email mời họp Ban Giám đốc, chủ đề Kế hoạch Q3, thứ 2 tuần sau 9h, phòng họp Hội đồng"}
     expected:
       must_contain: ["Kính gửi", "Q3"]
-      eval_notes: "Format chuẩn, xưng hô 'Kính gửi' phù hợp cấp BGĐ"
+      eval_notes: "Format chuẩn, xưng hô 'Kính gửi' tôn trọng, trang trọng phù hợp với cấp BGĐ."
 
   - id: T07.v2
     use_case: UC-09
-    criteria: [language]
+    criteria: [TC-04]
     name: "Email informal gửi nhân viên"
     type: realistic
     language: vi
@@ -339,11 +329,11 @@ test_cases:
       - {role: user, content: "viết tin nhắn ngắn nhờ em An phòng marketing chuẩn bị slide cho buổi họp ngày mai"}
     expected:
       must_not_contain: ["Kính gửi", "Quý ngài", "Trân trọng"]
-      eval_notes: "Văn phong informal, xưng 'em' / không quá trang trọng. Test Gemma có hiểu sắc thái VN không."
+      eval_notes: "Văn phong informal, xưng hô 'em An', thân thiện và chuyên nghiệp vừa phải."
 
   - id: T07.v3
     use_case: UC-09
-    criteria: [language, multilingual]
+    criteria: [TC-04, TC-05]
     name: "Email tiếng Anh"
     type: realistic
     language: en
@@ -352,11 +342,11 @@ test_cases:
     expected:
       must_contain: ["Q3", "9"]
       must_not_contain: ["Kính gửi", "Trân trọng"]
-      eval_notes: "Email thuần English, KHÔNG pha tiếng Việt"
+      eval_notes: "Email thuần Anh, không pha tiếng Việt, văn phong đúng chuẩn tiếng Anh doanh nghiệp."
 
   - id: T07.v4
     use_case: UC-09
-    criteria: [language]
+    criteria: [TC-04]
     name: "Email xin lỗi khách hàng"
     type: realistic
     language: vi
@@ -364,71 +354,35 @@ test_cases:
       - {role: user, content: "soạn email xin lỗi khách hàng vì giao trễ 3 ngày do sự cố vận chuyển"}
     expected:
       must_contain: ["xin lỗi"]
-      eval_notes: "Tone xin lỗi đúng mực + giải thích + đề xuất khắc phục"
+      eval_notes: "Tone xin lỗi chân thành, chuyên nghiệp, giải thích ngắn gọn nguyên nhân và đề xuất phương án đền bù."
 
   # ═════════════════════════════════════════════════════════════
-  # XUNG ĐỘT LỊCH (UC-14) — reasoning_with_data
+  # TẠO BIÊN BẢN & BÁO CÁO (UC-10) - [NEW]
   # ═════════════════════════════════════════════════════════════
-  - id: T08.v1
-    use_case: UC-14
-    criteria: [intent, accuracy]
-    name: "Phát hiện xung đột"
+  - id: T16.v1
+    use_case: UC-10
+    criteria: [TC-01, TC-04, TC-02]
+    name: "Tạo biên bản họp từ ghi chú thô"
     type: reasoning_with_data
     language: vi
     turns:
       - role: user
         content: |
-          có 2 cuộc họp này check giúp:
-          - 14:00-15:00: họp Marketing phòng A
-          - 14:30-15:30: họp BGĐ phòng họp lớn
+          Tạo biên bản họp dựa trên các ghi chú thô sau:
+          - Họp ngày 19/5 về dự án Beta
+          - Minh: báo cáo code xong 90%
+          - Lan: thiết kế UI bị chậm 1 tuần, hứa xong trước 25/5
+          - Quyết định: Dời ngày demo sang 28/5
     expected:
-      must_contain: ["trùng"]
-      eval_notes: "Nhận ra overlap 14:30-15:00, đề xuất phương án dời"
-
-  - id: T08.v2
-    use_case: UC-14
-    criteria: [intent, accuracy]
-    name: "Không có xung đột"
-    type: reasoning_with_data
-    language: vi
-    turns:
-      - role: user
-        content: |
-          có trùng không:
-          - 9:00-10:00: họp team A
-          - 11:00-12:00: họp team B
-    expected:
-      must_not_contain: ["trùng", "xung đột", "overlap"]
-      eval_notes: "Xác nhận KHÔNG trùng"
+      must_contain: ["Biên bản", "Beta", "25/5", "28/5"]
+      eval_notes: "Tạo tài liệu biên bản họp có cấu trúc chuẩn chỉnh, trình bày mạch lạc, giữ nguyên thông tin gốc."
 
   # ═════════════════════════════════════════════════════════════
-  # BÁO CÁO EOD (UC-17) — reasoning_with_data
-  # ═════════════════════════════════════════════════════════════
-  - id: T09.v1
-    use_case: UC-17
-    criteria: [intent, accuracy, language]
-    name: "Báo cáo cuối ngày"
-    type: reasoning_with_data
-    language: vi
-    turns:
-      - role: user
-        content: |
-          tổng hợp báo cáo cuối ngày từ task list:
-          - A: gửi proposal client X — DONE
-          - B: review code Auth — DONE
-          - C: họp Design — DONE
-          - D: viết spec Payment — CHƯA, hạn ngày mai
-          - E: kiểm tra báo cáo Q2 — QUÁ HẠN từ hôm qua
-    expected:
-      must_contain: ["hoàn thành", "quá hạn"]
-      eval_notes: "Phân loại 3 done / 1 pending / 1 overdue. Đúng tên task. Không bỏ sót."
-
-  # ═════════════════════════════════════════════════════════════
-  # THEO DÕI PHẢN HỒI (UC-11) — reasoning_with_data
+  # THEO DÕI PHẢN HỒI (UC-11) — Giả lập tương tác
   # ═════════════════════════════════════════════════════════════
   - id: T10.v1
     use_case: UC-11
-    criteria: [intent, accuracy]
+    criteria: [TC-02, TC-01]
     name: "Tìm người chưa phản hồi"
     type: reasoning_with_data
     language: vi
@@ -444,75 +398,14 @@ test_cases:
     expected:
       must_contain: ["Bình", "Chi"]
       must_not_contain: ["An chưa", "Dũng chưa"]
-      eval_notes: "Đúng: Bình + Chi. Phân biệt 'xác nhận nhưng chưa gửi' (Bình) vs 'không phản hồi' (Chi)."
+      eval_notes: "Phân tích chính xác trạng thái: Bình (hứa nhưng chưa gửi) và Chi (hoàn toàn im lặng) là những người chưa phản hồi kết quả."
 
   # ═════════════════════════════════════════════════════════════
-  # WORKFLOW TỪ BIÊN BẢN (UC-18)
-  # ═════════════════════════════════════════════════════════════
-  - id: T11.v1
-    use_case: UC-18
-    criteria: [intent, accuracy]
-    name: "Tạo task từ biên bản có cấu trúc"
-    type: reasoning_with_data
-    language: vi
-    turns:
-      - role: user
-        content: |
-          biên bản họp 19/5:
-          Action items:
-          1. An: thiết kế UI module Login, deadline 25/5
-          2. Bình: API spec module Auth, deadline 23/5
-          3. Chi: review test plan, deadline 22/5
-
-          tạo task cho từng item và xác nhận
-    expected:
-      must_contain: ["An", "Bình", "Chi", "25/5", "23/5", "22/5"]
-      eval_notes: "3 task đúng người + đúng deadline. Không tạo task thừa."
-
-  # ═════════════════════════════════════════════════════════════
-  # ƯU TIÊN HÓA (UC-06) — DeepSeek-R1 specialty
-  # ═════════════════════════════════════════════════════════════
-  - id: T12.v1
-    use_case: UC-06
-    criteria: [intent, accuracy]
-    name: "Sắp xếp 8 task theo ưu tiên"
-    type: reasoning_with_data
-    language: vi
-    thinking_compare: true   # so sánh có/không thinking mode
-    turns:
-      - role: user
-        content: |
-          giúp tôi sắp xếp 8 việc cần làm theo thứ tự ưu tiên:
-          1. Ký hợp đồng đối tác Singapore (deadline mai, blocking nhiều người)
-          2. Review CV ứng viên (deadline cuối tuần)
-          3. Trả lời email khách hàng X (đang chờ 2 ngày)
-          4. Họp 1-1 với cấp dưới (đã hoãn 1 lần)
-          5. Đọc báo cáo tài chính Q2 (deadline thứ 6)
-          6. Viết feedback cho team Design (low priority)
-          7. Xác nhận lịch họp BGĐ (deadline trong 2h)
-          8. Cập nhật LinkedIn (no deadline)
-
-          giải thích lý do sắp xếp
-    expected:
-      eval_notes: "Sắp xếp logic: 7 → 1 (blocking + sắp deadline) trước. 8/6 cuối. Lý do rõ ràng, không random."
-
-  - id: T12.v2
-    use_case: UC-06
-    criteria: [intent, robustness]
-    name: "Quá nhiều thông tin, model có sort tốt không"
-    type: realistic
-    language: vi
-    turns:
-      - {role: user, content: "tôi có 10 việc tồn đọng, giúp sắp xếp thứ tự"}
-    expected:
-      eval_notes: "Phải hỏi list 10 việc là gì + deadline + importance. Không tự bịa."
-
-  # ═════════════════════════════════════════════════════════════
-  # EXTRACT ACTION ITEMS từ TRANSCRIPT (UC-12)
+  # ACTION ITEMS TỪ TRANSCRIPT (UC-12)
   # ═════════════════════════════════════════════════════════════
   - id: T13.v1
     use_case: UC-12
-    criteria: [intent, accuracy]
+    criteria: [TC-02, TC-01]
     name: "Action items từ transcript hội thoại tự nhiên"
     type: reasoning_with_data
     language: vi
@@ -529,13 +422,14 @@ test_cases:
           Chi: ok tôi review trong tuần này
           An: à và mọi người nhớ update progress trên Jira mỗi thứ 3 hàng tuần
           Bình: ok deal
+          Chi: ok
     expected:
       must_contain: ["An", "Bình", "Chi"]
-      eval_notes: "4 items: An-wireframe-T5, Bình-API spec-T6, Chi-review test-trong tuần, all-update Jira-T3 weekly. Đúng người + đúng deadline tương đối."
+      eval_notes: "Trích xuất đầy đủ 4 action items: An (wireframe login - trước thứ 5), Bình (API spec - thứ 6), Chi (review test plan - trong tuần), Tất cả (update progress Jira - thứ 3 hàng tuần)."
 
   - id: T13.v2
     use_case: UC-12
-    criteria: [accuracy, robustness]
+    criteria: [TC-01, TC-08]
     name: "Transcript không có action item rõ"
     type: reasoning_with_data
     language: vi
@@ -548,66 +442,71 @@ test_cases:
           B: ừ mai họp đi café Highland đi
           A: ok nha
     expected:
-      eval_notes: "Không có action item công việc thực — phải nói rõ, không bịa task."
+      eval_notes: "Không phát hiện action item công việc nào trong cuộc hội thoại tự do. Tránh bịa việc."
 
   # ═════════════════════════════════════════════════════════════
-  # BRIEF TRƯỚC HỌP (UC-13)
+  # BRIEF TRƯỚC HỌP (UC-13) - [UPDATED WITH DATA]
   # ═════════════════════════════════════════════════════════════
   - id: T14.v1
     use_case: UC-13
-    criteria: [language, intent]
-    name: "Brief cho cuộc họp đối tác"
-    type: realistic
+    criteria: [TC-04, TC-02, TC-01]
+    name: "Brief cho cuộc họp đối tác khi có dữ liệu"
+    type: reasoning_with_data
     language: vi
     turns:
-      - {role: user, content: "chuẩn bị brief cho tôi cuộc họp với đối tác Singapore chiều nay về việc mở rộng thị trường Đông Nam Á"}
+      - role: user
+        content: |
+          Dữ liệu lịch sử:
+          - Đối tác Singapore: Keppel Corp.
+          - Dự án trước đó: Hoàn thành ký MOU đầu tư 10 triệu USD.
+          - Trọng tâm cuộc họp hôm nay: Đàm phán triển khai thực tế giai đoạn 1 mở rộng Đông Nam Á.
+
+          Hãy chuẩn bị brief cho cuộc họp với đối tác Singapore chiều nay.
     expected:
-      eval_notes: "Vì không có data context → phải nói cần thêm: lịch sử trao đổi, mục tiêu cụ thể, người tham dự... Hoặc đưa template brief."
+      must_contain: ["Keppel Corp", "MOU", "10 triệu USD"]
+      eval_notes: "Tạo tóm tắt chuẩn bị họp (brief) súc tích, chuyên nghiệp dựa trên dữ liệu lịch sử đối tác."
 
   # ═════════════════════════════════════════════════════════════
-  # HALLUCINATION (TC-01 critical)
+  # XUNG ĐỘT LỊCH (UC-14) — Giả lập tương tác
   # ═════════════════════════════════════════════════════════════
-  - id: HAL.v1
-    use_case: UC-01
-    criteria: [accuracy, robustness]
-    name: "Hỏi nội dung email cụ thể không có context"
-    type: robustness
+  - id: T08.v1
+    use_case: UC-14
+    criteria: [TC-02, TC-01]
+    name: "Phát hiện xung đột"
+    type: reasoning_with_data
     language: vi
     turns:
-      - {role: user, content: "email từ anh Tuấn sáng nay nói gì"}
+      - role: user
+        content: |
+          có 2 cuộc họp này check giúp:
+          - 14:00-15:00: họp Marketing phòng A
+          - 14:30-15:30: họp BGĐ phòng họp lớn
     expected:
-      must_not_contain: ["anh Tuấn nói", "anh Tuấn viết", "nội dung email"]
-      eval_notes: "CRITICAL: phải nói chưa có quyền truy cập email / chưa có nội dung. KHÔNG bịa nội dung."
+      must_contain: ["trùng", "xung đột"]
+      eval_notes: "Nhận biết chính xác xung đột thời gian trong khung giờ overlap (14:30 - 15:00)."
 
-  - id: HAL.v2
-    use_case: UC-04
-    criteria: [accuracy, robustness]
-    name: "Hỏi trạng thái task không có data"
-    type: robustness
+  - id: T08.v2
+    use_case: UC-14
+    criteria: [TC-02, TC-01]
+    name: "Không có xung đột"
+    type: reasoning_with_data
     language: vi
     turns:
-      - {role: user, content: "Minh đã gửi báo cáo Q2 chưa"}
+      - role: user
+        content: |
+          có trùng không:
+          - 9:00-10:00: họp team A
+          - 11:00-12:00: họp team B
     expected:
-      must_not_contain: ["đã gửi", "chưa gửi"]
-      eval_notes: "CRITICAL: bot không biết → phải nói rõ. KHÔNG được trả 'đã gửi rồi' hoặc 'chưa gửi'."
-
-  - id: HAL.v3
-    use_case: UC-08
-    criteria: [accuracy, robustness]
-    name: "Tìm tài liệu không tồn tại trong context"
-    type: robustness
-    language: vi
-    turns:
-      - {role: user, content: "tìm biên bản họp tháng 3 với đối tác ABC"}
-    expected:
-      eval_notes: "Phải nói chưa có quyền truy cập kho tài liệu / cần thông tin cụ thể hơn. KHÔNG bịa biên bản."
+      must_not_contain: ["trùng", "xung đột", "overlap"]
+      eval_notes: "Xác nhận chính xác 2 lịch họp không trùng lặp và không có bất kỳ cảnh báo sai lệch nào."
 
   # ═════════════════════════════════════════════════════════════
-  # MULTILINGUAL (UC-15, TC-05)
+  # HỖ TRỢ ĐA NGÔN NGỮ (UC-15)
   # ═════════════════════════════════════════════════════════════
   - id: ML.v1
     use_case: UC-15
-    criteria: [multilingual]
+    criteria: [TC-05]
     name: "Pure English"
     type: realistic
     language: en
@@ -615,11 +514,11 @@ test_cases:
       - {role: user, content: "what meetings do I have tomorrow morning"}
     expected:
       must_not_contain: ["Tôi", "Anh", "lịch họp"]
-      eval_notes: "Trả lời 100% English"
+      eval_notes: "Trả lời 100% bằng tiếng Anh trôi chảy và chuyên nghiệp."
 
   - id: ML.v2
     use_case: UC-15
-    criteria: [multilingual]
+    criteria: [TC-05]
     name: "Pure Vietnamese"
     type: realistic
     language: vi
@@ -627,63 +526,186 @@ test_cases:
       - {role: user, content: "lịch họp ngày mai sao rồi"}
     expected:
       must_not_contain: ["meeting", "tomorrow", "schedule"]
-      eval_notes: "Trả lời 100% tiếng Việt"
+      eval_notes: "Trả lời 100% bằng tiếng Việt chuẩn chỉnh, tự nhiên."
 
   - id: ML.v3
     use_case: UC-15
-    criteria: [multilingual]
+    criteria: [TC-05]
     name: "Code-switch mixed"
     type: realistic
     language: mixed
     turns:
       - {role: user, content: "send a meeting invitation cho team marketing vào 9am thứ 2"}
     expected:
-      eval_notes: "Sếp VN hay nói lẫn. Quan sát model chọn VI hay EN dominant, có nhất quán không."
+      eval_notes: "Xử lý thông minh khi người dùng trộn tiếng Anh/Việt. Ưu tiên trả lời bằng tiếng Việt lịch sự."
 
   # ═════════════════════════════════════════════════════════════
-  # FORMALITY / XƯNG HÔ (TC-04 Language Quality)
+  # HỘI THOẠI NHIỀU LƯỢT (UC-16)
   # ═════════════════════════════════════════════════════════════
-  - id: FRM.v1
-    use_case: UC-09
-    criteria: [language]
-    name: "Trang trọng — gửi giám đốc cấp cao"
+  - id: T05.v1
+    use_case: UC-16
+    criteria: [TC-03, TC-02]
+    name: "4-turn đặt lịch tích lũy info"
     type: realistic
     language: vi
     turns:
-      - {role: user, content: "viết thư gửi giám đốc tập đoàn xin lịch trình bày kế hoạch năm"}
+      - {role: user, content: "đặt lịch họp với team kỹ thuật"}
+      - {role: assistant, content: "Vâng, anh muốn đặt khi nào ạ?"}
+      - {role: user, content: "thứ 5"}
+      - {role: assistant, content: "Thứ 5 này, mấy giờ ạ?"}
+      - {role: user, content: "10h sáng"}
+      - {role: assistant, content: "Vâng. Họp ở đâu ạ?"}
+      - {role: user, content: "phòng meeting B tầng 3"}
     expected:
-      must_contain: ["Kính gửi"]
-      eval_notes: "Văn phong trang trọng cao nhất"
+      must_contain: ["team kỹ thuật", "10", "phòng"]
+      must_not_contain: ["với ai", "ngày nào", "thời gian nào"]
+      eval_notes: "Tổng hợp đủ toàn bộ thông tin tích lũy qua 4 lượt để xác nhận một lịch họp hoàn tất."
 
-  - id: FRM.v2
-    use_case: UC-09
-    criteria: [language]
-    name: "Suồng sã — chat với đồng nghiệp"
+  - id: T05.v2
+    use_case: UC-16
+    criteria: [TC-03]
+    name: "Đổi ý giữa chừng"
     type: realistic
     language: vi
     turns:
-      - {role: user, content: "nhắn tin nhanh cho Hùng team backend hỏi xem PR đã review chưa"}
+      - {role: user, content: "tạo task gửi báo cáo cho Minh deadline thứ 6"}
+      - {role: assistant, content: "Đã ghi. Task: gửi báo cáo / assignee: Minh / deadline: thứ 6."}
+      - {role: user, content: "đổi sang thứ 2 tuần sau"}
     expected:
-      must_not_contain: ["Kính gửi", "Trân trọng", "Quý"]
-      eval_notes: "Tone chat ngắn, không trang trọng. Gemma có thể yếu ở đây."
+      must_contain: ["thứ 2", "Minh"]
+      eval_notes: "Cập nhật chính xác deadline mới sang thứ 2, đồng thời giữ nguyên công việc và người được giao."
 
-  - id: FRM.v3
-    use_case: UC-09
-    criteria: [language]
-    name: "Lịch sự vừa phải — gửi khách hàng"
+  - id: T05.v3
+    use_case: UC-16
+    criteria: [TC-03]
+    name: "Reference vague 'cuộc họp đó'"
     type: realistic
     language: vi
     turns:
-      - {role: user, content: "trả lời email khách hàng cảm ơn họ đã phản hồi và xác nhận sẽ gửi hợp đồng trong tuần"}
+      - {role: user, content: "đặt lịch họp với CEO 14h thứ 4"}
+      - {role: assistant, content: "Đã đặt lịch họp với CEO, thứ 4, 14:00."}
+      - {role: user, content: "dời cuộc họp đó sang 15h đi"}
     expected:
-      eval_notes: "Lịch sự, professional, không quá trang trọng như gửi BGĐ"
+      must_contain: ["15"]
+      must_not_contain: ["cuộc họp nào"]
+      eval_notes: "Xác định đại từ chỉ định 'cuộc họp đó' chính là cuộc họp với CEO lúc 14h vừa đặt để tiến hành dời giờ."
+
+  - id: T05.v4
+    use_case: UC-16
+    criteria: [TC-03, TC-08]
+    name: "Push back — sếp không thích response"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "soạn email xin lỗi khách hàng vì giao hàng trễ"}
+      - {role: assistant, content: "Kính gửi quý khách,\n\nChúng tôi thành thật xin lỗi vì sự chậm trễ trong việc giao hàng vừa qua. Đội ngũ của chúng tôi đã làm việc hết sức để khắc phục..."}
+      - {role: user, content: "viết lại ngắn hơn"}
+    expected:
+      eval_notes: "Lắng nghe ý kiến của sếp và tạo phiên bản 2 tối giản, ngắn gọn hơn rõ rệt."
+
+  - id: T05.v5
+    use_case: UC-16
+    criteria: [TC-03]
+    name: "Chuyển ngữ cảnh đột ngột"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "lịch họp BGĐ thứ 4 có chưa"}
+      - {role: assistant, content: "Tôi chưa có thông tin về lịch họp BGĐ thứ 4. Anh có thể cho biết thêm chi tiết không?"}
+      - {role: user, content: "à mà email khách hàng C đâu rồi"}
+    expected:
+      must_not_contain: ["BGĐ", "thứ 4"]
+      eval_notes: "Nhận biết việc sếp đổi chủ đề đột ngột từ họp hành sang email và tập trung trả lời câu hỏi mới."
 
   # ═════════════════════════════════════════════════════════════
-  # VERBOSE / INSTRUCTION FOLLOWING (DeepSeek-R1 specific)
+  # BÁO CÁO CUỐI NGÀY (UC-17) — Giả lập tương tác
+  # ═════════════════════════════════════════════════════════════
+  - id: T09.v1
+    use_case: UC-17
+    criteria: [TC-02, TC-01, TC-04]
+    name: "Báo cáo cuối ngày"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          tổng hợp báo cáo cuối ngày từ task list:
+          - A: gửi proposal client X — DONE
+          - B: review code Auth — DONE
+          - C: họp Design — DONE
+          - D: viết spec Payment — CHƯA, hạn ngày mai
+          - E: kiểm tra báo cáo Q2 — QUÁ HẠN từ hôm qua
+    expected:
+      must_contain: ["hoàn thành", "quá hạn"]
+      eval_notes: "Tạo cấu trúc báo cáo định dạng chuẩn: Nhóm 3 công việc hoàn thành (A, B, C), 1 công việc sắp đến hạn (D), 1 công việc quá hạn (E)."
+
+  # ═════════════════════════════════════════════════════════════
+  # KÍCH HOẠT WORKFLOW TỰ ĐỘNG (UC-18)
+  # ═════════════════════════════════════════════════════════════
+  - id: T11.v1
+    use_case: UC-18
+    criteria: [TC-02, TC-01]
+    name: "Tạo task từ biên bản có cấu trúc"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          biên bản họp 19/5:
+          Action items:
+          1. An: thiết kế UI module Login, deadline 25/5
+          2. Bình: API spec module Auth, deadline 23/5
+          3. Chi: review test plan, deadline 22/5
+
+          tạo task cho từng item và xác nhận
+    expected:
+      must_contain: ["An", "Bình", "Chi", "25/5", "23/5", "22/5"]
+      eval_notes: "Kích hoạt chuỗi tạo 3 task riêng biệt gán đúng người và đúng thời hạn hoàn thành tương ứng."
+
+  # ═════════════════════════════════════════════════════════════
+  # Hạn chế ảo giác (Hallucination - TC-01 Critical)
+  # ═════════════════════════════════════════════════════════════
+  - id: HAL.v1
+    use_case: UC-01
+    criteria: [TC-01, TC-08]
+    name: "Hỏi nội dung email cụ thể không có context"
+    type: robustness
+    language: vi
+    turns:
+      - {role: user, content: "email từ anh Tuấn sáng nay nói gì"}
+    expected:
+      must_not_contain: ["anh Tuấn nói", "anh Tuấn viết", "nội dung email"]
+      eval_notes: "CRITICAL: Bot phải báo lỗi thiếu thông tin/không có quyền truy cập email. Tuyệt đối không được tự bịa ra nội dung email."
+
+  - id: HAL.v2
+    use_case: UC-04
+    criteria: [TC-01, TC-08]
+    name: "Hỏi trạng thái task không có data"
+    type: robustness
+    language: vi
+    turns:
+      - {role: user, content: "Minh đã gửi báo cáo Q2 chưa"}
+    expected:
+      must_not_contain: ["đã gửi", "chưa gửi"]
+      eval_notes: "CRITICAL: Bot không biết trạng thái thực tế do thiếu dữ liệu. Phải thông báo chưa có dữ liệu. Không tự ý khẳng định đã gửi hay chưa."
+
+  - id: HAL.v3
+    use_case: UC-08
+    criteria: [TC-01, TC-08]
+    name: "Tìm tài liệu không tồn tại trong context"
+    type: robustness
+    language: vi
+    turns:
+      - {role: user, content: "tìm biên bản họp tháng 3 với đối tác ABC"}
+    expected:
+      eval_notes: "CRITICAL: Thông báo chưa có quyền truy cập kho lưu trữ hoặc không tìm thấy tài liệu. Không bịa đặt nội dung biên bản."
+
+  # ═════════════════════════════════════════════════════════════
+  # ĐỘ DÀI & PHẢN HỒI (TC-04 Language, TC-08 Robustness)
   # ═════════════════════════════════════════════════════════════
   - id: VRB.v1
     use_case: "*"
-    criteria: [intent, language]
+    criteria: [TC-02, TC-08]
     name: "Chỉ định trả lời 1 câu"
     type: realistic
     language: vi
@@ -691,25 +713,25 @@ test_cases:
     turns:
       - {role: user, content: "trả lời CHỈ trong 1 câu: chiến lược tốt nhất để giảm thời gian họp là gì"}
     expected:
-      eval_notes: "Đúng 1 câu. DeepSeek-R1 + thinking mode dễ vi phạm (verbose chain)."
+      eval_notes: "Phải trả lời đúng 1 câu duy nhất. Không viết thêm đoạn phân tích hay kết luận dài dòng."
 
   - id: VRB.v2
     use_case: "*"
-    criteria: [intent]
+    criteria: [TC-02]
     name: "Yes/No question"
     type: realistic
     language: vi
     turns:
       - {role: user, content: "có nên dời cuộc họp 14h sang chiều mai không, biết là ngày mai tôi đang đi công tác"}
     expected:
-      eval_notes: "Phải trả lời rõ Yes/No + lý do ngắn. Không hỏi vòng vo."
+      eval_notes: "Đưa ra khuyến nghị Có/Không (ở đây là KHÔNG nên dời sang mai vì sếp đi công tác) kèm theo lý giải cực kỳ ngắn gọn."
 
   # ═════════════════════════════════════════════════════════════
-  # MATH / COUNTING (TC-01 Accuracy)
+  # TÍNH TOÁN (TC-01 Accuracy)
   # ═════════════════════════════════════════════════════════════
   - id: MTH.v1
     use_case: UC-17
-    criteria: [accuracy]
+    criteria: [TC-01]
     name: "Tính tỉ lệ hoàn thành"
     type: reasoning_with_data
     language: vi
@@ -719,11 +741,11 @@ test_cases:
           tôi có 7 task: A done, B done, C pending, D done, E overdue, F done, G done. Tỉ lệ hoàn thành?
     expected:
       must_contain: ["71"]
-      eval_notes: "5/7 = 71.4%. Phải đúng số."
+      eval_notes: "Tính chính xác tỉ lệ hoàn thành: 5/7 = 71.4%."
 
   - id: MTH.v2
     use_case: UC-02
-    criteria: [accuracy, temporal]
+    criteria: [TC-01, TC-06]
     name: "Tính ngày"
     type: realistic
     language: vi
@@ -731,14 +753,14 @@ test_cases:
       - {role: user, content: "task này deadline 25/5 — hôm nay là 19/5 — còn bao nhiêu ngày"}
     expected:
       must_contain: ["6"]
-      eval_notes: "Đúng 6 ngày."
+      eval_notes: "Tính toán khoảng cách ngày chính xác: còn lại 6 ngày."
 
   # ═════════════════════════════════════════════════════════════
-  # MULTI-TASK trong 1 câu (UC-18)
+  # ĐA NHIỆM TRONG CÂU (UC-18)
   # ═════════════════════════════════════════════════════════════
   - id: MTK.v1
     use_case: UC-18
-    criteria: [intent, accuracy]
+    criteria: [TC-02, TC-01]
     name: "3 việc trong 1 lệnh"
     type: realistic
     language: vi
@@ -746,36 +768,36 @@ test_cases:
       - {role: user, content: "đặt lịch họp BGĐ thứ 4 9h, soạn agenda gửi mọi người, và nhắc tôi review trước 1 ngày"}
     expected:
       must_contain: ["BGĐ", "agenda"]
-      eval_notes: "Phải split thành 3 actions riêng: 1 đặt lịch, 2 soạn email, 3 tạo reminder. Không gộp/bỏ sót."
+      eval_notes: "Phân tách rõ và xử lý đồng thời 3 hành động: 1. Đặt lịch họp BGĐ, 2. Soạn email chương trình (agenda), 3. Tạo lịch nhắc xem lại trước 1 ngày."
 
   - id: MTK.v2
     use_case: UC-18
-    criteria: [intent]
+    criteria: [TC-02]
     name: "2 việc kèm điều kiện"
     type: realistic
     language: vi
     turns:
       - {role: user, content: "nếu Minh xác nhận đến họp thì gửi anh ấy bộ tài liệu, không thì hủy lịch đi"}
     expected:
-      eval_notes: "Hiểu conditional. Phải mô tả 2 branch."
+      eval_notes: "Hiểu đúng tư duy rẽ nhánh điều kiện (nếu A thì làm X, nếu không thì làm Y) và xác nhận rõ hai nhánh xử lý."
 
   # ═════════════════════════════════════════════════════════════
   # ROBUSTNESS bổ sung
   # ═════════════════════════════════════════════════════════════
   - id: RB.v1
     use_case: "*"
-    criteria: [robustness]
+    criteria: [TC-08]
     name: "Ngoài phạm vi"
     type: edge
     language: vi
     turns:
       - {role: user, content: "đặt vé máy bay đi Tokyo tuần sau"}
     expected:
-      eval_notes: "Phải nói không có chức năng đặt vé, hoặc đề xuất cách khác."
+      eval_notes: "Từ chối khéo léo vì nằm ngoài phạm vi nghiệp vụ thư ký ảo hỗ trợ quản lý lịch/công việc nội bộ."
 
   - id: RB.v2
     use_case: "*"
-    criteria: [robustness]
+    criteria: [TC-08]
     name: "Mâu thuẫn trong câu"
     type: edge
     language: vi
@@ -783,26 +805,26 @@ test_cases:
       - {role: user, content: "đặt lịch họp thứ 2 ngày 25/5 lúc 9h. à không, 26/5."}
     expected:
       must_contain: ["26"]
-      eval_notes: "Dùng info update cuối cùng (26/5)."
+      eval_notes: "Ưu tiên xử lý theo dữ liệu hiệu đính mới nhất ở cuối câu (ngày 26/5)."
 
   - id: RB.v3
     use_case: "*"
-    criteria: [robustness]
+    criteria: [TC-08]
     name: "Câu rất cụt"
     type: edge
     language: vi
     turns:
       - {role: user, content: "huỷ"}
     expected:
-      eval_notes: "Phải hỏi rõ: hủy cái gì?"
+      eval_notes: "Phải hỏi rõ đối tượng muốn hủy là gì (hủy lịch họp, hủy task hay hủy soạn thư)."
 
   - id: RB.v4
     use_case: "*"
-    criteria: [robustness, intent]
+    criteria: [TC-08, TC-02]
     name: "Sai chính tả nặng + viết tắt"
     type: edge
     language: vi
     turns:
       - {role: user, content: "nhc t hop vs CEO 2h c.nay nha"}
     expected:
-      eval_notes: "'nhắc tôi họp với CEO 2h chiều nay nhé'. Bot có hiểu không?"
+      eval_notes: "Dịch nghĩa chuẩn xác ngôn ngữ viết tắt/sai chính tả ('nhắc tôi họp với CEO lúc 2h chiều nay nhé') và xác nhận hành động tương ứng."
