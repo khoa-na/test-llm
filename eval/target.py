@@ -1,0 +1,36 @@
+"""Gọi target model trên Modal — chỉ SDK hoặc HTTP endpoint."""
+import time
+
+import requests
+
+from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE
+
+
+def _call_sdk(messages, thinking_mode=False):
+    import modal
+    cls = modal.Cls.from_name("test-llm-chatbot-thuky", "LLMServer")
+    t0 = time.time()
+    res = cls().generate.remote(
+        messages=messages, max_tokens=MAX_TOKENS, thinking_mode=thinking_mode
+    )
+    return res, time.time() - t0
+
+
+def _call_http(messages, thinking_mode=False):
+    if not MODAL_ENDPOINT_URL:
+        raise ValueError("Thiếu MODAL_ENDPOINT_URL trong .env khi chạy HTTP")
+    t0 = time.time()
+    r = requests.post(
+        MODAL_ENDPOINT_URL,
+        json={"messages": messages, "max_tokens": MAX_TOKENS, "thinking_mode": thinking_mode},
+        timeout=600,
+    )
+    r.raise_for_status()
+    return r.json(), time.time() - t0
+
+
+def call_target(messages, thinking_mode=False):
+    """Dispatch theo MODE trong config (`sdk` hoặc `http`)."""
+    if MODE == "http":
+        return _call_http(messages, thinking_mode)
+    return _call_sdk(messages, thinking_mode)
