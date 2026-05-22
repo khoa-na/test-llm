@@ -11,18 +11,27 @@ Gọi từ client khác:
     Xem `modal_client.py`
 """
 import os
+from pathlib import Path
+from dotenv import dotenv_values, load_dotenv
 import modal
+
+load_dotenv()
+env_path = Path(__file__).parent / ".env"
+env_config = {
+    **dotenv_values(env_path),
+    **os.environ
+}
 
 # ───────────────────────────────────────────────
 # Config
 # ───────────────────────────────────────────────
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-9B")
-MAX_MODEL_LEN = int(os.getenv("MAX_MODEL_LEN", "4096"))           # A10G 24GB chật, để 4096 cho an toàn
-GPU_MEM_UTIL = float(os.getenv("GPU_MEMORY_UTILIZATION", "0.90")) # chừa headroom KV cache
-DTYPE = os.getenv("DTYPE", "bfloat16")
-ENFORCE_EAGER = os.getenv("ENFORCE_EAGER", "true").lower() == "true"  # skip CUDA graphs → save ~2GB
-MAX_NUM_SEQS = int(os.getenv("MAX_NUM_SEQS", "4"))                # batch nhỏ cho A10G
-GPU_TYPE = os.getenv("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
+MODEL_NAME = env_config.get("MODEL_NAME", "Qwen/Qwen3.5-9B")
+MAX_MODEL_LEN = int(env_config.get("MAX_MODEL_LEN", "4096"))           # A10G 24GB chật, để 4096 cho an toàn
+GPU_MEM_UTIL = float(env_config.get("GPU_MEMORY_UTILIZATION", "0.90")) # chừa headroom KV cache
+DTYPE = env_config.get("DTYPE", "bfloat16")
+ENFORCE_EAGER = env_config.get("ENFORCE_EAGER", "true").lower() == "true"  # skip CUDA graphs → save ~2GB
+MAX_NUM_SEQS = int(env_config.get("MAX_NUM_SEQS", "4"))                # batch nhỏ cho A10G
+GPU_TYPE = env_config.get("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
 
 # ───────────────────────────────────────────────
 # Container image (Modal tự build trên cloud)
@@ -87,7 +96,7 @@ class LLMServer:
         """Post-snapshot (GPU available): load weights lên VRAM."""
         from vllm import LLM
         # Mirror HF_TOKEN sang HUGGING_FACE_HUB_TOKEN (huggingface_hub check cả 2).
-        hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+        hf_token = env_config.get("HF_TOKEN") or env_config.get("HUGGING_FACE_HUB_TOKEN")
         if hf_token:
             os.environ["HF_TOKEN"] = hf_token
             os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
