@@ -18,10 +18,10 @@
 # ===============================================================
 
 system_prompt: |
-  Bạn là một trợ lý thư ký AI cho lãnh đạo doanh nghiệp.
-  Bạn giúp quản lý lịch, công việc, email, và hỗ trợ ra quyết định.
-  Trả lời NGẮN GỌN, lịch sự, chuyên nghiệp bằng tiếng Việt (trừ khi user dùng tiếng Anh).
-  Khi không có dữ liệu hoặc thiếu thông tin, hãy nói rõ và hỏi lại — KHÔNG được bịa thông tin (lịch, email, task, người gửi).
+  Bạn là thư ký AI cho lãnh đạo: quản lý lịch, công việc, email, hỗ trợ ra quyết định.
+  Trả lời ngắn gọn, chuyên nghiệp; cùng ngôn ngữ với user (user English → reply English; mặc định tiếng Việt).
+  Đã đủ dữ liệu → xử lý/xác nhận ngay, KHÔNG hỏi lại thông tin đã có. Thiếu data → nói rõ và hỏi cụ thể.
+  KHÔNG bịa lịch/email/task/tên người.
 
 test_cases:
 
@@ -436,13 +436,13 @@ test_cases:
     turns:
       - role: user
         content: |
-          trích action items:
+          trích action items công việc (chỉ task liên quan công việc, bỏ qua hội thoại xã giao):
 
           A: nay thời tiết đẹp ha
-          B: ừ mai họp đi café Highland đi
+          B: ừ mai rảnh đi cà phê Highland chơi
           A: ok nha
     expected:
-      eval_notes: "Không phát hiện action item công việc nào trong cuộc hội thoại tự do. Tránh bịa việc."
+      eval_notes: "Hội thoại xã giao thuần tuý (rủ đi cà phê), KHÔNG có action item công việc. Bot phải trả lời 'không có action item công việc nào'."
 
   # ═════════════════════════════════════════════════════════════
   # BRIEF TRƯỚC HỌP (UC-13) - [UPDATED WITH DATA]
@@ -674,8 +674,8 @@ test_cases:
     turns:
       - {role: user, content: "email từ anh Tuấn sáng nay nói gì"}
     expected:
-      must_not_contain: ["anh Tuấn nói", "anh Tuấn viết", "nội dung email"]
-      eval_notes: "CRITICAL: Bot phải báo lỗi thiếu thông tin/không có quyền truy cập email. Tuyệt đối không được tự bịa ra nội dung email."
+      must_not_contain: ["anh Tuấn nói", "anh Tuấn viết", "anh Tuấn báo cáo", "anh Tuấn thông báo", "theo email anh Tuấn"]
+      eval_notes: "CRITICAL: Bot phải báo lỗi thiếu thông tin/không có quyền truy cập email. Tuyệt đối không được tự bịa nội dung email. Cấm chỉ các cụm KHẲNG ĐỊNH (anh Tuấn đã nói/viết/báo cáo); chấp nhận model bảo user paste nội dung."
 
   - id: HAL.v2
     use_case: UC-04
@@ -828,3 +828,248 @@ test_cases:
       - {role: user, content: "nhc t hop vs CEO 2h c.nay nha"}
     expected:
       eval_notes: "Dịch nghĩa chuẩn xác ngôn ngữ viết tắt/sai chính tả ('nhắc tôi họp với CEO lúc 2h chiều nay nhé') và xác nhận hành động tương ứng."
+
+  # ═════════════════════════════════════════════════════════════
+  # TC-06 TEMPORAL REASONING — bổ sung (lấp gap TC-06 yếu nhất)
+  # ═════════════════════════════════════════════════════════════
+  - id: TMP.v1
+    use_case: UC-01
+    criteria: [TC-06, TC-02]
+    name: "Đầu tháng sau"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "lịch đầu tháng sau có gì"}
+    expected:
+      eval_notes: "Hiểu 'đầu tháng sau' = khoảng 1-7 của tháng kế. Vì không có data → phải nói chưa có quyền truy cập, KHÔNG bịa lịch."
+
+  - id: TMP.v2
+    use_case: UC-02
+    criteria: [TC-06, TC-01]
+    name: "Số ngày đã trôi qua"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - {role: user, content: "task A bắt đầu 10/5/2026, deadline 24/5/2026, hôm nay là 19/5/2026 — đã chạy bao nhiêu ngày"}
+    expected:
+      must_contain: ["9"]
+      eval_notes: "10/5/2026 → 19/5/2026 = 9 ngày đã trôi qua. Đầy đủ context, không cần hỏi lại năm."
+
+  - id: TMP.v3
+    use_case: UC-02
+    criteria: [TC-06]
+    name: "Cuối tháng này là ngày bao nhiêu"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "deadline cuối tháng này rơi vào ngày bao nhiêu, hôm nay 21/5"}
+    expected:
+      must_contain: ["31"]
+      eval_notes: "Tháng 5 có 31 ngày → cuối tháng = 31/5."
+
+  - id: TMP.v4
+    use_case: UC-08
+    criteria: [TC-06, TC-08]
+    name: "Refusal khi hỏi data tuần trước"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "biên bản họp thứ 4 tuần trước với team dev nói gì"}
+    expected:
+      must_not_contain: ["team dev nói", "team dev đã quyết"]
+      eval_notes: "Hiểu 'thứ 4 tuần trước'. Vì không có data biên bản → refusal hợp lệ, KHÔNG bịa nội dung."
+
+  - id: TMP.v5
+    use_case: UC-04
+    criteria: [TC-06, TC-02]
+    name: "Nhắc sau N tiếng nữa"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "bây giờ 9h sáng, nhắc tôi gọi anh Long sau 3 tiếng nữa"}
+    expected:
+      must_contain: ["Long", "12"]
+      eval_notes: "9h + 3h = 12h trưa. Xác nhận task nhắc gọi anh Long lúc 12h."
+
+  - id: TMP.v6
+    use_case: UC-02
+    criteria: [TC-06, TC-01]
+    name: "Số tuần còn lại trong quý"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - {role: user, content: "Q2 kết thúc 30/6/2026. Hôm nay 21/5/2026. Tính theo lịch dương, còn bao nhiêu tuần đến hết Q2?"}
+    expected:
+      eval_notes: "Từ 21/5 đến 30/6 = 40 ngày ≈ 5-6 tuần dương lịch (chấp nhận 5, 5.5, 5-6, hoặc 6). Không cần lịch làm việc."
+
+  # ═════════════════════════════════════════════════════════════
+  # TC-09 CONSISTENCY — rerun để check biến động giữa các lần
+  # ═════════════════════════════════════════════════════════════
+  - id: CST.v1
+    use_case: UC-04
+    criteria: [TC-09, TC-02, TC-08]
+    name: "Refusal nhất quán khi thiếu data"
+    type: realistic
+    language: vi
+    rerun: 3
+    turns:
+      - {role: user, content: "tình hình dự án Alpha thế nào rồi"}
+    expected:
+      eval_notes: "3 lần chạy đều phải refusal hợp lệ (chưa có data dự án Alpha), không lần nào bịa tiến độ."
+
+  - id: CST.v2
+    use_case: UC-09
+    criteria: [TC-09, TC-04]
+    name: "Email format nhất quán qua nhiều lần"
+    type: realistic
+    language: vi
+    rerun: 3
+    turns:
+      - {role: user, content: "soạn email cảm ơn đối tác sau cuộc họp hôm nay"}
+    expected:
+      eval_notes: "3 phiên bản email có thể khác nhau về chữ nhưng đều giữ format chuẩn (kính gửi/lời cảm ơn/kết). Không lần nào lệch format hay đổi ngôn ngữ."
+
+  - id: CST.v3
+    use_case: UC-02
+    criteria: [TC-09, TC-01, TC-06]
+    name: "Phép toán ngày nhất quán"
+    type: realistic
+    language: vi
+    rerun: 3
+    turns:
+      - {role: user, content: "deadline 25/5/2026, hôm nay 19/5/2026, còn bao nhiêu ngày"}
+    expected:
+      must_contain: ["6"]
+      eval_notes: "Cả 3 lần đều phải ra 6 ngày — accuracy + consistency. Đầy đủ context, không cần hỏi năm."
+
+  # ═════════════════════════════════════════════════════════════
+  # TC-05 LANGUAGE — chống chèn ngôn ngữ lạ + EN drift
+  # ═════════════════════════════════════════════════════════════
+  - id: LNG.v1
+    use_case: UC-02
+    criteria: [TC-05, TC-04]
+    name: "Reply VN — không chèn CJK"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "task nào đang sắp đến hạn trong 3 ngày tới"}
+    expected:
+      must_not_contain: ["的", "了", "是", "は", "です", "の", "を", "中文"]
+      eval_notes: "Response thuần Việt, không lẫn ký tự Trung/Nhật ngoài bảng chữ tiếng Việt."
+
+  - id: LNG.v2
+    use_case: UC-09
+    criteria: [TC-05]
+    name: "EN reply — không kính ngữ Việt"
+    type: realistic
+    language: en
+    turns:
+      - {role: user, content: "summarize my pending tasks for this week"}
+    expected:
+      must_not_contain: ["Dạ", "Kính gửi", "Trân trọng", "thưa sếp", "Báo cáo sếp", "ạ."]
+      eval_notes: "Phản hồi 100% tiếng Anh, không kính ngữ tiếng Việt."
+
+  - id: LNG.v3
+    use_case: UC-09
+    criteria: [TC-05, TC-02]
+    name: "EN dài — không drift sang VN"
+    type: realistic
+    language: en
+    turns:
+      - role: user
+        content: |
+          draft a 5-bullet weekly status update for my CEO covering:
+          1) sales pipeline
+          2) hiring
+          3) product launch
+          4) customer escalations
+          5) board prep
+    expected:
+      must_not_contain: ["Dạ", "Kính gửi", "Trân trọng", "ạ.", "thưa"]
+      eval_notes: "Email dài, không được drift sang tiếng Việt ở bất kỳ bullet nào."
+
+  # ═════════════════════════════════════════════════════════════
+  # TC-04 LANGUAGE QUALITY — tone phù hợp người nhận
+  # ═════════════════════════════════════════════════════════════
+  - id: TON.v1
+    use_case: UC-09
+    criteria: [TC-04, TC-02]
+    name: "Nhắn cấp dưới — informal"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "nhắn em Linh phòng kế toán nộp bảng lương tháng trước trước cuối ngày mai"}
+    expected:
+      must_contain: ["Linh"]
+      must_not_contain: ["Kính gửi", "Trân trọng quý"]
+      eval_notes: "Tin nhắn ngắn gửi cấp dưới — văn phong informal, không dùng kính ngữ trang trọng quá mức."
+
+  - id: TON.v2
+    use_case: UC-09
+    criteria: [TC-04, TC-01]
+    name: "Email gửi cấp trên — trang trọng"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "soạn email gửi Chủ tịch HĐQT báo cáo kết quả công tác tháng 5"}
+    expected:
+      must_contain: ["Kính gửi"]
+      eval_notes: "Email gửi Chủ tịch → văn phong trang trọng, đầy đủ cấu trúc (Kính gửi/Nội dung/Trân trọng)."
+
+  # ═════════════════════════════════════════════════════════════
+  # TC-01 ACCURACY — math + trích số liệu chính xác
+  # ═════════════════════════════════════════════════════════════
+  - id: ACC.v1
+    use_case: UC-17
+    criteria: [TC-01]
+    name: "Tỉ lệ phần trăm khác"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - {role: user, content: "team có 12 người, 9 hoàn thành KPI tháng. Tỉ lệ hoàn thành?"}
+    expected:
+      must_contain: ["75"]
+      eval_notes: "9/12 = 75% — phải ra đúng con số 75."
+
+  - id: ACC.v2
+    use_case: UC-08
+    criteria: [TC-01, TC-02]
+    name: "Trích số từ đoạn báo cáo dài"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          Báo cáo Q1: doanh thu 12.5 tỷ (tăng 18% YoY), chi phí 9.2 tỷ, lợi nhuận trước thuế 3.3 tỷ. Khách hàng mới: 145.
+
+          Cho tôi biết lợi nhuận trước thuế Q1.
+    expected:
+      must_contain: ["3.3"]
+      must_not_contain: ["12.5 tỷ lợi nhuận", "9.2 tỷ lợi nhuận"]
+      eval_notes: "Trích đúng số lợi nhuận trước thuế 3.3 tỷ, không nhầm với doanh thu/chi phí."
+
+  # ═════════════════════════════════════════════════════════════
+  # TC-02 INTENT — multi-intent + intent mơ hồ
+  # ═════════════════════════════════════════════════════════════
+  - id: INT.v1
+    use_case: "*"
+    criteria: [TC-02, TC-01]
+    name: "2 intent trái nhau trong 1 câu"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "hủy lịch họp 3h chiều nay và thay vào đó nhắc tôi gọi cho Hùng"}
+    expected:
+      must_contain: ["Hùng"]
+      eval_notes: "Nhận diện 2 intent (cancel meeting + create reminder), xác nhận xử lý cả 2 hành động."
+
+  - id: INT.v2
+    use_case: "*"
+    criteria: [TC-02, TC-08]
+    name: "Intent mơ hồ — chỉ định không rõ"
+    type: edge
+    language: vi
+    turns:
+      - {role: user, content: "thế còn cái kia"}
+    expected:
+      eval_notes: "Câu mơ hồ, không có context trước → phải hỏi lại 'cái kia' đề cập tới việc gì."
