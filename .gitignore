@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Eval artifacts (regeneratable từ run_eval_judge.py)
+eval/eval_outputs*.json
+eval/eval_report*.md
