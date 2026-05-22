@@ -53,13 +53,18 @@ for s in ["generate", "judge", "all"]:
         args.remove(s)
         break
 
-# Tìm Mode: "dashscope", "sdk", "http" (mặc định: env hoặc "dashscope")
-MODE = env_config.get("EVAL_MODE", "dashscope")
-for m in ["dashscope", "sdk", "http"]:
+# Tìm Mode target — chỉ chấp nhận Modal (sdk hoặc http endpoint).
+# DashScope/Qwen-max cloud KHÔNG còn được hỗ trợ ở stage generate; benchmark chỉ
+# chấm model self-hosted trên Modal.
+MODE = env_config.get("EVAL_MODE", "sdk")
+for m in ["sdk", "http"]:
     if m in args:
         MODE = m
         args.remove(m)
         break
+if MODE not in ("sdk", "http"):
+    print(f"⚠️ EVAL_MODE='{MODE}' không hỗ trợ. Fallback về 'sdk' (Modal SDK).")
+    MODE = "sdk"
 
 # Đối số còn lại nếu có sẽ là JUDGE_MODEL
 JUDGE_MODEL = args[0] if args else env_config.get("JUDGE_MODEL", "gemini-3.1-flash-lite")
@@ -68,6 +73,10 @@ MAX_TOKENS = int(env_config.get("EVAL_MAX_TOKENS", "512"))
 JUDGE_TEMPERATURE = float(env_config.get("JUDGE_TEMPERATURE", "0.0"))
 JUDGE_RPM = int(env_config.get("JUDGE_RPM", "15"))  # Free-tier Gemini = 15 req/min
 OUTPUTS_JSON_PATH = Path(__file__).parent / "eval_outputs.json"
+
+# Tên model target (để ghi vào output cho biết câu trả lời sinh từ model nào).
+# Đọc cùng key MODEL_NAME như modal_app.py để đồng bộ.
+TARGET_MODEL_NAME = env_config.get("MODEL_NAME", "Qwen/Qwen3.5-9B")
 
 # Sliding-window rate limiter — đảm bảo không vượt JUDGE_RPM request / 60s
 from collections import deque
@@ -102,7 +111,8 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"⚠️ Không thể khởi tạo Gemini client: {e}")
 
-# Khởi tạo DashScope client nếu có key
+# DashScope client (chỉ dùng cho judge khi JUDGE_MODEL bắt đầu bằng "qwen").
+# Generate stage không còn gọi DashScope nữa.
 DASHSCOPE_API_KEY = env_config.get("DASHSCOPE_API_KEY")
 dashscope_judge_client = None
 if DASHSCOPE_API_KEY:
@@ -116,74 +126,8 @@ if DASHSCOPE_API_KEY:
 
 
 # ───────────────────────────────────────────────
-# Target model callers (DashScope & Modal)
+# Target model callers (chỉ Modal: SDK + HTTP endpoint)
 # ───────────────────────────────────────────────
-def call_model_dashscope(messages, thinking_mode=False):
-    from openai import OpenAI
-    t0 = time.time()
-    api_key = env_config.get("DASHSCOPE_API_KEY")
-    if not api_key:
-        raise ValueError("Thiếu DASHSCOPE_API_KEY trong .env để chạy DashScope model")
-        
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    )
-    
-    extra_body = {}
-    if thinking_mode:
-        extra_body["enable_thinking"] = True
-        
-    completion = client.chat.completions.create(
-        model="qwen3.6-max-preview",
-        messages=messages,
-        extra_body=extra_body,
-        stream=True,
-        max_tokens=MAX_TOKENS,
-        stream_options={"include_usage": True}
-    )
-    
-    reasoning_chunks = []
-    content_chunks = []
-    prompt_tokens = 0
-    completion_tokens = 0
-    
-    for chunk in completion:
-        if not chunk.choices:
-            if hasattr(chunk, "usage") and chunk.usage is not None:
-                prompt_tokens = chunk.usage.prompt_tokens
-                completion_tokens = chunk.usage.completion_tokens
-            continue
-            
-        delta = chunk.choices[0].delta
-        if hasattr(delta, "reasoning_content") and delta.reasoning_content is not None:
-            reasoning_chunks.append(delta.reasoning_content)
-        if hasattr(delta, "content") and delta.content is not None:
-            content_chunks.append(delta.content)
-            
-    reasoning = "".join(reasoning_chunks)
-    content = "".join(content_chunks)
-    
-    full_text = ""
-    if reasoning:
-        full_text += f"<thinking>\n{reasoning}\n</thinking>\n"
-    full_text += content
-    
-    latency = time.time() - t0
-    
-    if prompt_tokens == 0:
-        total_chars = sum(len(m.get("content", "")) for m in messages)
-        prompt_tokens = int(total_chars / 4)
-    if completion_tokens == 0:
-        completion_tokens = int(len(full_text) / 4)
-        
-    return {
-        "text": full_text,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-    }, latency
-
-
 def call_model_sdk(messages, thinking_mode=False):
     import modal
     cls = modal.Cls.from_name("test-llm-chatbot-thuky", "LLMServer")
@@ -674,12 +618,7 @@ def evaluate_case(case, system_prompt=""):
 
     thinking_mode = case.get("thinking_mode", False) or case.get("thinking_compare", False)
 
-    if MODE == "dashscope":
-        res, latency = call_model_dashscope(messages, thinking_mode)
-    elif MODE == "http":
-        res, latency = call_model_http(messages, thinking_mode)
-    else:
-        res, latency = call_model_sdk(messages, thinking_mode)
+    res, latency = _call_target(messages, thinking_mode)
 
     output_text = res.get("text", "")
     verdict = judge(case, output_text, system_prompt)
@@ -704,23 +643,31 @@ def evaluate_case(case, system_prompt=""):
 
 
 def _call_target(messages, thinking_mode):
-    if MODE == "dashscope":
-        return call_model_dashscope(messages, thinking_mode)
-    elif MODE == "http":
+    """Gọi target Modal — chỉ SDK hoặc HTTP endpoint, không còn DashScope."""
+    if MODE == "http":
         return call_model_http(messages, thinking_mode)
-    else:
-        return call_model_sdk(messages, thinking_mode)
+    return call_model_sdk(messages, thinking_mode)
 
 
 def generate_responses(test_cases, system_prompt):
     print(f"Giai doan GENERATE: Sinh cau tra loi cho {len(test_cases)} test cases...")
-    outputs = {}
+    print(f"  Target: Modal {MODE.upper()} | Model: {TARGET_MODEL_NAME}\n")
+
+    # `_meta` lưu tên model + mode vào file output để biết câu trả lời được sinh
+    # bởi model nào. Khi judge stage đọc lại sẽ skip key này.
+    outputs = {
+        "_meta": {
+            "model": TARGET_MODEL_NAME,
+            "mode": MODE,
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    }
     for i, case in enumerate(test_cases, 1):
         cid = case.get("id")
         cname = case.get("name", "")
         n_runs = max(1, int(case.get("rerun", 1)))
         suffix = f" x{n_runs}" if n_runs > 1 else ""
-        print(f"[{i}/{len(test_cases)}] Model {MODE.upper()} -> {cid}{suffix}...", end="", flush=True)
+        print(f"[{i}/{len(test_cases)}] {TARGET_MODEL_NAME} via {MODE.upper()} -> {cid}{suffix}...", end="", flush=True)
         try:
             messages = list(case.get("turns", []))
             if system_prompt:
@@ -731,6 +678,7 @@ def generate_responses(test_cases, system_prompt):
             if n_runs == 1:
                 res, latency = _call_target(messages, thinking_mode)
                 outputs[cid] = {
+                    "model": TARGET_MODEL_NAME,
                     "output": res.get("text", ""),
                     "latency": latency,
                     "prompt_tokens": res.get("prompt_tokens", 0),
@@ -748,19 +696,20 @@ def generate_responses(test_cases, system_prompt):
                         "prompt_tokens": res.get("prompt_tokens", 0),
                         "completion_tokens": res.get("completion_tokens", 0),
                     })
-                outputs[cid] = {"runs": runs}
+                outputs[cid] = {"model": TARGET_MODEL_NAME, "runs": runs}
                 total_lat = sum(r["latency"] for r in runs)
                 print(f" Done ({n_runs} runs, total {total_lat:.1f}s)")
         except Exception as e:
             print(f" ERROR: {e}")
             outputs[cid] = {
+                "model": TARGET_MODEL_NAME,
                 "output": "",
                 "latency": 0.0,
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
                 "error": str(e)
             }
-            
+
     with open(OUTPUTS_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(outputs, f, ensure_ascii=False, indent=2)
     print(f"Da luu cau tra loi vao {OUTPUTS_JSON_PATH}\n")
@@ -798,10 +747,11 @@ def _compute_per_tc_scores(results):
     return summary
 
 
-def write_markdown_report(test_cases, results, passed_count, total_latency, total_prompt, total_completion, total_score):
+def write_markdown_report(test_cases, results, passed_count, total_latency, total_prompt, total_completion, total_score, target_meta=None):
     n = len(test_cases) or 1
     avg_latency = total_latency / n
     avg_overall = total_score / n
+    target_meta = target_meta or {}
     pass_pct = passed_count / n * 100
     production_count = sum(1 for r in results if r.get("overall", 0) >= PRODUCTION_THRESHOLD)
     production_pct = production_count / n * 100
@@ -819,6 +769,8 @@ def write_markdown_report(test_cases, results, passed_count, total_latency, tota
     print(f"Latency TB         : {avg_latency:.2f}s")
     print(f"Prompt tokens      : {total_prompt}")
     print(f"Completion tokens  : {total_completion}")
+    print(f"Target model       : {target_meta.get('model', TARGET_MODEL_NAME)} "
+          f"(Modal {target_meta.get('mode', MODE).upper()})")
     print(f"Judge model        : {JUDGE_MODEL}")
     print("-" * 60)
     print("Diem TB theo tieu chi (xlsx v3, thang 0-100):")
@@ -830,7 +782,10 @@ def write_markdown_report(test_cases, results, passed_count, total_latency, tota
     with open(report_path, "w", encoding="utf-8") as rf:
         rf.write("# Bao cao Danh gia LLM-as-Judge\n\n")
         rf.write(f"* **Thoi gian**: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-        rf.write(f"* **Target mode**: {MODE.upper()}\n")
+        target_model = target_meta.get("model", TARGET_MODEL_NAME)
+        target_mode_str = target_meta.get("mode", MODE).upper()
+        gen_at = target_meta.get("generated_at", "?")
+        rf.write(f"* **Target model**: `{target_model}` (Modal {target_mode_str}, generated {gen_at})\n")
         rf.write(f"* **Judge model**: `{JUDGE_MODEL}`\n")
         rf.write(f"* **Nguon tieu chi**: `Chatbot_ThuKy_UseCases_EvalCriteria_v3.xlsx` (sheet 'Tieu chi danh gia')\n")
         rf.write(f"* **Thang diem**: 0-100 (PASS >= {PASS_THRESHOLD}, Production-ready >= {PRODUCTION_THRESHOLD})\n")
@@ -938,11 +893,17 @@ def run_judge_stage(test_cases, system_prompt):
     if not OUTPUTS_JSON_PATH.exists():
         print(f"Loi: Khong tim thay tep {OUTPUTS_JSON_PATH}. Hay chay stage 'generate' truoc!")
         sys.exit(1)
-        
+
     print(f"Doc cau tra loi da sinh tu {OUTPUTS_JSON_PATH}")
     with open(OUTPUTS_JSON_PATH, "r", encoding="utf-8") as f:
         outputs = json.load(f)
-        
+
+    # Hiển thị model nào đã sinh ra batch output này.
+    meta = outputs.get("_meta") or {}
+    if meta:
+        print(f"  -> Output sinh bởi: {meta.get('model','?')} ({meta.get('mode','?')}) "
+              f"luc {meta.get('generated_at','?')}")
+
     print(f"Giai doan JUDGE: Cham diem bang {JUDGE_MODEL}...")
     results = []
     passed_count = 0
@@ -1091,7 +1052,7 @@ def run_judge_stage(test_cases, system_prompt):
                 passed_count += 1
             print(f" [overall={r['overall']}/100 — log unicode skipped]")
             
-    write_markdown_report(test_cases, results, passed_count, total_latency, total_prompt, total_completion, total_score)
+    write_markdown_report(test_cases, results, passed_count, total_latency, total_prompt, total_completion, total_score, target_meta=meta)
 
 
 def main():
