@@ -11,9 +11,15 @@ import os
 import sys
 import time
 import requests
-from dotenv import load_dotenv
+from pathlib import Path
+from dotenv import dotenv_values, load_dotenv
 
 load_dotenv()
+env_path = Path(__file__).parent / ".env"
+env_config = {
+    **dotenv_values(env_path),
+    **os.environ
+}
 
 
 def call_via_modal_sdk(question: str):
@@ -31,7 +37,7 @@ def call_via_modal_sdk(question: str):
 
 def call_via_http(question: str):
     """Gọi qua HTTP endpoint (web URL)."""
-    url = os.getenv("MODAL_ENDPOINT_URL", "")
+    url = env_config.get("MODAL_ENDPOINT_URL", "")
     if not url:
         print("❌ Set MODAL_ENDPOINT_URL trong .env (URL hiện ra sau khi modal deploy)")
         return
