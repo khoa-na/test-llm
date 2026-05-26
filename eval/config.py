@@ -58,6 +58,8 @@ if MODE not in ("sdk", "http"):
 JUDGE_MODEL: str = _args.judge_model or env_config.get("JUDGE_MODEL", "gemini-3.1-flash-lite")
 
 MAX_TOKENS: int = int(env_config.get("EVAL_MAX_TOKENS", "512"))
+TARGET_TEMPERATURE: float = float(env_config.get("EVAL_TEMPERATURE", "0.2"))
+GENERATE_WORKERS: int = max(1, int(env_config.get("EVAL_GENERATE_WORKERS", "1")))
 JUDGE_TEMPERATURE: float = float(env_config.get("JUDGE_TEMPERATURE", "0.0"))
 JUDGE_RPM: int = int(env_config.get("JUDGE_RPM", "15"))
 

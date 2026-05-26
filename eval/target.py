@@ -1,9 +1,21 @@
 """Gọi target model trên Modal — chỉ SDK hoặc HTTP endpoint."""
 import time
+import warnings
 
 import requests
 
-from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE
+from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE, TARGET_TEMPERATURE
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*WindowsSelectorEventLoopPolicy.*deprecated.*",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*asyncio\.set_event_loop_policy.*deprecated.*",
+    category=DeprecationWarning,
+)
 
 
 def _call_sdk(messages, thinking_mode=False):
@@ -11,7 +23,10 @@ def _call_sdk(messages, thinking_mode=False):
     cls = modal.Cls.from_name("test-llm-chatbot-thuky", "LLMServer")
     t0 = time.time()
     res = cls().generate.remote(
-        messages=messages, max_tokens=MAX_TOKENS, thinking_mode=thinking_mode
+        messages=messages,
+        max_tokens=MAX_TOKENS,
+        temperature=TARGET_TEMPERATURE,
+        thinking_mode=thinking_mode,
     )
     return res, time.time() - t0
 
@@ -22,7 +37,12 @@ def _call_http(messages, thinking_mode=False):
     t0 = time.time()
     r = requests.post(
         MODAL_ENDPOINT_URL,
-        json={"messages": messages, "max_tokens": MAX_TOKENS, "thinking_mode": thinking_mode},
+        json={
+            "messages": messages,
+            "max_tokens": MAX_TOKENS,
+            "temperature": TARGET_TEMPERATURE,
+            "thinking_mode": thinking_mode,
+        },
         timeout=600,
     )
     r.raise_for_status()
