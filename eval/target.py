@@ -1,9 +1,21 @@
 """Gọi target model trên Modal — chỉ SDK hoặc HTTP endpoint."""
 import time
+import warnings
 
 import requests
 
 from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*WindowsSelectorEventLoopPolicy.*deprecated.*",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*asyncio\.set_event_loop_policy.*deprecated.*",
+    category=DeprecationWarning,
+)
 
 
 def _call_sdk(messages, thinking_mode=False):
