@@ -15,15 +15,18 @@ Chạy:
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yaml
 
 from config import (
+    GENERATE_WORKERS,
     JUDGE_MODEL,
     MODE,
     OUTPUTS_JSON_PATH,
     PASS_THRESHOLD,
     STAGE,
+    TARGET_TEMPERATURE,
     TARGET_MODEL_NAME,
     TEST_CASES_PATH,
 )
@@ -55,9 +58,39 @@ def _run_one(case, system_prompt):
     }
 
 
+def _error_run(error):
+    return {
+        "output": "",
+        "latency": 0.0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": str(error),
+    }
+
+
+def _generate_job(job, system_prompt):
+    case_index, total_cases, case, run_index, n_runs = job
+    cid = case.get("id")
+    try:
+        return case_index, total_cases, cid, run_index, n_runs, _run_one(case, system_prompt)
+    except Exception as e:
+        return case_index, total_cases, cid, run_index, n_runs, _error_run(e)
+
+
+def _log_generate_result(done, total_jobs, cid, run_index, n_runs, run):
+    run_suffix = f" run {run_index + 1}/{n_runs}" if n_runs > 1 else ""
+    if run.get("error"):
+        print(f"[{done}/{total_jobs}] {cid}{run_suffix} ERROR: {run['error']}")
+    else:
+        print(f"[{done}/{total_jobs}] {cid}{run_suffix} Done ({run['latency']:.1f}s)")
+
+
 def generate_responses(test_cases, system_prompt):
     print(f"Giai doan GENERATE: Sinh cau tra loi cho {len(test_cases)} test cases...")
-    print(f"  Target: Modal {MODE.upper()} | Model: {TARGET_MODEL_NAME}\n")
+    print(
+        f"  Target: Modal {MODE.upper()} | Model: {TARGET_MODEL_NAME} | "
+        f"Workers: {GENERATE_WORKERS} | Temperature: {TARGET_TEMPERATURE}\n"
+    )
 
     # `_meta` lưu tên model + mode để judge stage hiển thị trong report.
     outputs = {
@@ -68,33 +101,56 @@ def generate_responses(test_cases, system_prompt):
         }
     }
 
+    case_specs = []
+    jobs = []
     for i, case in enumerate(test_cases, 1):
         cid = case.get("id")
         n_runs = max(1, int(case.get("rerun", 1)))
-        suffix = f" x{n_runs}" if n_runs > 1 else ""
-        print(f"[{i}/{len(test_cases)}] {TARGET_MODEL_NAME} via {MODE.upper()} -> {cid}{suffix}...",
-              end="", flush=True)
-        try:
-            if n_runs == 1:
-                run = _run_one(case, system_prompt)
-                outputs[cid] = {"model": TARGET_MODEL_NAME, **run}
-                print(f" Done ({run['latency']:.1f}s)")
-            else:
-                # Multi-run case (phục vụ TC-09 Consistency).
-                runs = [_run_one(case, system_prompt) for _ in range(n_runs)]
-                outputs[cid] = {"model": TARGET_MODEL_NAME, "runs": runs}
-                total_lat = sum(r["latency"] for r in runs)
-                print(f" Done ({n_runs} runs, total {total_lat:.1f}s)")
-        except Exception as e:
-            print(f" ERROR: {e}")
+        case_specs.append((case, cid, n_runs))
+        for run_index in range(n_runs):
+            jobs.append((i, len(test_cases), case, run_index, n_runs))
+
+    results = {
+        cid: [None] * n_runs
+        for _, cid, n_runs in case_specs
+    }
+    total_jobs = len(jobs)
+    done = 0
+
+    if GENERATE_WORKERS == 1:
+        for job in jobs:
+            _, _, cid, run_index, n_runs, run = _generate_job(job, system_prompt)
+            results[cid][run_index] = run
+            done += 1
+            _log_generate_result(done, total_jobs, cid, run_index, n_runs, run)
+    else:
+        with ThreadPoolExecutor(max_workers=GENERATE_WORKERS) as executor:
+            futures = [
+                executor.submit(_generate_job, job, system_prompt)
+                for job in jobs
+            ]
+            for future in as_completed(futures):
+                _, _, cid, run_index, n_runs, run = future.result()
+                results[cid][run_index] = run
+                done += 1
+                _log_generate_result(done, total_jobs, cid, run_index, n_runs, run)
+
+    for case, cid, n_runs in case_specs:
+        runs = [
+            run if run is not None else _error_run("Generate job did not return a result")
+            for run in results[cid]
+        ]
+        if n_runs == 1:
+            outputs[cid] = {"model": TARGET_MODEL_NAME, **runs[0]}
+        elif all(run.get("error") for run in runs):
             outputs[cid] = {
                 "model": TARGET_MODEL_NAME,
-                "output": "",
-                "latency": 0.0,
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "error": str(e),
+                "runs": runs,
+                "error": "; ".join(run["error"] for run in runs),
             }
+        else:
+            # Multi-run case (phục vụ TC-09 Consistency).
+            outputs[cid] = {"model": TARGET_MODEL_NAME, "runs": runs}
 
     with open(OUTPUTS_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(outputs, f, ensure_ascii=False, indent=2)
