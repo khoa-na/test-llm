@@ -26,6 +26,7 @@ from config import (
     OUTPUTS_JSON_PATH,
     PASS_THRESHOLD,
     STAGE,
+    TARGET_TEMPERATURE,
     TARGET_MODEL_NAME,
     TEST_CASES_PATH,
 )
@@ -88,7 +89,7 @@ def generate_responses(test_cases, system_prompt):
     print(f"Giai doan GENERATE: Sinh cau tra loi cho {len(test_cases)} test cases...")
     print(
         f"  Target: Modal {MODE.upper()} | Model: {TARGET_MODEL_NAME} | "
-        f"Workers: {GENERATE_WORKERS}\n"
+        f"Workers: {GENERATE_WORKERS} | Temperature: {TARGET_TEMPERATURE}\n"
     )
 
     # `_meta` lưu tên model + mode để judge stage hiển thị trong report.
