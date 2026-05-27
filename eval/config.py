@@ -42,6 +42,11 @@ def _parse_args(argv):
         "judge_model", nargs="?", default=None,
         help="Tên judge model. Override JUDGE_MODEL.",
     )
+    p.add_argument(
+        "--set", dest="test_set", default=None, choices=["chat", "rag"],
+        help="Bộ test: 'chat' (test_cases_chat.yaml) hoặc 'rag' (test_cases_rag.yaml). "
+             "Override EVAL_SET (mặc định 'chat').",
+    )
     # Hỗ trợ cú pháp cũ: thứ tự args có thể là bất kỳ — gom lại rồi reorder.
     # Vd `python run_eval_judge.py judge sdk gemini-2.5-flash` vẫn parse đúng.
     return p.parse_args(argv)
@@ -57,6 +62,12 @@ if MODE not in ("sdk", "http"):
 
 JUDGE_MODEL: str = _args.judge_model or env_config.get("JUDGE_MODEL", "gemini-3.1-flash-lite")
 
+# Bộ test: chat (chỉ cần hội thoại) hoặc rag (cần data truy xuất). Mỗi bộ 1 file riêng.
+TEST_SET: str = _args.test_set or env_config.get("EVAL_SET", "chat")
+if TEST_SET not in ("chat", "rag"):
+    print(f"⚠️ EVAL_SET='{TEST_SET}' không hỗ trợ. Fallback về 'chat'.")
+    TEST_SET = "chat"
+
 MAX_TOKENS: int = int(env_config.get("EVAL_MAX_TOKENS", "512"))
 TARGET_TEMPERATURE: float = float(env_config.get("EVAL_TEMPERATURE", "0.2"))
 GENERATE_WORKERS: int = max(1, int(env_config.get("EVAL_GENERATE_WORKERS", "1")))
@@ -69,10 +80,10 @@ TARGET_MODEL_NAME: str = env_config.get("MODEL_NAME", "Qwen/Qwen3.5-9B")
 # Slug an toàn cho filename: "Qwen/Qwen3.5-9B-Instruct" → "Qwen_Qwen3.5-9B-Instruct"
 _MODEL_SLUG = TARGET_MODEL_NAME.replace("/", "_").replace("\\", "_").replace(":", "_")
 
-# File output gắn slug model để dễ phân biệt khi đổi model (Qwen vs Llama vs ...).
-TEST_CASES_PATH: Path = Path(__file__).parent / "test_cases.yaml"
-OUTPUTS_JSON_PATH: Path = Path(__file__).parent / f"eval_outputs__{_MODEL_SLUG}.json"
-REPORT_PATH: Path = Path(__file__).parent / f"eval_report_judge__{_MODEL_SLUG}.md"
+# File output gắn slug model + bộ test để dễ phân biệt (Qwen vs Llama, chat vs rag).
+TEST_CASES_PATH: Path = Path(__file__).parent / f"test_cases_{TEST_SET}.yaml"
+OUTPUTS_JSON_PATH: Path = Path(__file__).parent / f"eval_outputs__{TEST_SET}__{_MODEL_SLUG}.json"
+REPORT_PATH: Path = Path(__file__).parent / f"eval_report_judge__{TEST_SET}__{_MODEL_SLUG}.md"
 
 GEMINI_API_KEY: str | None = env_config.get("GEMINI_API_KEY") or env_config.get("GOOGLE_API_KEY")
 DASHSCOPE_API_KEY: str | None = env_config.get("DASHSCOPE_API_KEY")

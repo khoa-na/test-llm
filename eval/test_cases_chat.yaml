@@ -1,0 +1,1109 @@
+# Test cases LOAI 1 - CHAT thuan (khong can RAG).
+# Model tra loi chi tu hoi thoai + du lieu user dan san trong prompt.
+# Gom: soan thao, tone/ngon ngu, multi-turn, suy luan tren data dan san,
+# toan/temporal khi da cho so, cam xuc, hoi-lam-ro, hanh dong (danh dau/huy/nhac).
+# QUY UOC: case TRUY VAN kho du lieu (lich/task/email/tai lieu) -> dat o test_cases_rag.yaml.
+
+system_prompt: |
+  Bạn là thư ký AI cho lãnh đạo, hỗ trợ lịch, công việc, email, tài liệu và quyết định vận hành.
+
+  Thứ tự ưu tiên:
+  1. Trả lời cùng ngôn ngữ với user. Nếu user viết tiếng Anh, trả lời 100% tiếng Anh.
+  2. Không bịa dữ liệu không có trong prompt hoặc không có quyền truy cập.
+  3. Nếu user đã cung cấp dữ liệu trong câu hỏi, hãy dùng dữ liệu đó để phân tích/trả lời; không viện cớ thiếu quyền truy cập.
+  4. Chỉ hỏi lại khi thiếu thông tin bắt buộc khiến không thể làm tiếp. Nếu thiếu thông tin phụ, hãy dùng giả định hợp lý hoặc placeholder.
+  5. Trả lời ngắn gọn, chuyên nghiệp, đúng vai trò thư ký.
+
+  Quy tắc hành động:
+  - Với đặt lịch: nếu có người tham dự + thời gian/ngày + địa điểm/kênh họp, hãy xác nhận hoặc tạo nháp lịch ngay. Không hỏi thêm agenda, phòng cụ thể, tài liệu, số điện thoại.
+  - Với reminder: nếu có việc cần nhắc + thời điểm, hãy xác nhận reminder ngay. Không hỏi thêm số điện thoại, kênh liên hệ hoặc ghi chú.
+  - Với email/tin nhắn/tài liệu: hãy soạn bản nháp ngay. Nếu thiếu tên người nhận, chủ đề hoặc chi tiết phụ, dùng placeholder như [Tên đối tác], [nội dung chính], [ngày giờ]. Không hỏi trước khi soạn.
+  - Với câu hỏi Có/Không hoặc xin khuyến nghị: trả lời trực tiếp trước. Nếu có dữ kiện gây xung đột/blocker, ưu tiên khuyến nghị Không nên/Không thể và nêu lý do ngắn gọn.
+  - Với dữ liệu lịch/task/email/tài liệu đã được user paste trong prompt: phân tích trực tiếp trên dữ liệu đó.
+  - Với dữ liệu không có trong prompt và cần quyền truy cập hệ thống: nói rõ chưa có dữ liệu/quyền truy cập, rồi hỏi tối đa 1 câu quan trọng nhất.
+
+  Quy tắc văn phong:
+  - Không dùng numbered list khi chỉ cần trả lời ngắn.
+  - Khi thiếu dữ liệu thật sự, trả lời tối đa 2 câu.
+  - Với tin nhắn cho cấp dưới/nhân viên, dùng giọng thân thiện, gọn, không quá trang trọng.
+  - Với email cấp trên/BGĐ/khách hàng, dùng giọng trang trọng, có cấu trúc phù hợp.
+  - Không dùng kính ngữ tiếng Việt trong câu trả lời tiếng Anh.
+test_cases:
+- id: T03.v1
+  use_case: UC-03
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-01
+  name: Đặt lịch đầy đủ info
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: đặt lịch gặp chị Lan HR chiều thứ 4 tuần sau 2-3h tại văn phòng tôi
+  expected:
+    must_contain:
+    - Lan
+    - HR
+    eval_notes: 'Parse: ai (Lan/HR), khi (thứ 4 tuần sau, 14-15h), nơi (VP)'
+- id: T03.v2
+  use_case: UC-03
+  criteria:
+  - TC-06
+  - TC-08
+  name: Voice-to-text đặt lịch
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: dat lich hop anh Tuan 10h sang mai
+  expected:
+    must_contain:
+    - Tuấn
+    eval_notes: No-dấu vẫn hiểu được và chuyển đổi đúng sang tiếng Việt chuẩn.
+- id: T03.v3
+  use_case: UC-03
+  criteria:
+  - TC-08
+  name: 'Edge: thiếu info'
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: đặt lịch họp đi
+  expected:
+    eval_notes: 'Phải hỏi rõ các thông tin còn thiếu: với ai? khi nào? ở đâu? Không tự đoán.'
+- id: T04.v1
+  use_case: UC-04
+  criteria:
+  - TC-02
+  - TC-01
+  name: Task đầy đủ
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: tạo task gửi báo cáo Q2 cho HĐQT, deadline cuối tháng, ưu tiên cao, giao Minh kế toán
+  expected:
+    must_contain:
+    - Minh
+    - Q2
+    eval_notes: 'Xác nhận task với đủ 4 fields: tên task, deadline, mức ưu tiên, người phụ trách.'
+- id: T04.v2
+  use_case: UC-04
+  criteria:
+  - TC-08
+  name: Task thiếu info
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: nhắc tôi gọi Hùng
+  expected:
+    must_contain:
+    - Hùng
+    eval_notes: 'Phải hỏi thêm: khi nào cần nhắc? Không tự đặt mặc định khi chưa có xác nhận.'
+- id: T04.v3
+  use_case: UC-04
+  criteria:
+  - TC-02
+  name: Reminder ngắn
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: 9h sáng mai nhắc tôi gọi anh Hùng
+  expected:
+    must_contain:
+    - Hùng
+    eval_notes: Self-reminder, parse temporal đúng ngày mai lúc 9h.
+- id: T15.v1
+  use_case: UC-05
+  criteria:
+  - TC-02
+  - TC-01
+  name: Đánh dấu hoàn thành task
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: Đánh dấu hoàn thành task họp hội đồng quản trị
+  expected:
+    must_contain:
+    - hoàn thành
+    - hội đồng quản trị
+    eval_notes: Xác nhận đã cập nhật trạng thái hoàn thành cho đúng task được chỉ định.
+- id: T15.v2
+  use_case: UC-05
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-01
+  name: Hoãn task sang tuần sau
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: Hoãn task chuẩn bị tài liệu dự án sang tuần sau giúp tôi
+  expected:
+    must_contain:
+    - hoãn
+    - tuần sau
+    - tài liệu
+    eval_notes: Xác nhận hoãn và cập nhật thời hạn mới sang tuần sau.
+- id: T12.v1
+  use_case: UC-06
+  criteria:
+  - TC-02
+  - TC-01
+  name: Sắp xếp 8 task theo ưu tiên
+  type: reasoning_with_data
+  language: vi
+  thinking_compare: true
+  turns:
+  - role: user
+    content: |
+      giúp tôi sắp xếp 8 việc cần làm theo thứ tự ưu tiên:
+      1. Ký hợp đồng đối tác Singapore (deadline mai, blocking nhiều người)
+      2. Review CV ứng viên (deadline cuối tuần)
+      3. Trả lời email khách hàng X (đang chờ 2 ngày)
+      4. Họp 1-1 với cấp dưới (đã hoãn 1 lần)
+      5. Đọc báo cáo tài chính Q2 (deadline thứ 6)
+      6. Viết feedback cho team Design (low priority)
+      7. Xác nhận lịch họp BGĐ (deadline trong 2h)
+      8. Cập nhật LinkedIn (no deadline)
+
+      giải thích lý do sắp xếp
+  expected:
+    eval_notes: 'Đưa ra danh sách sắp xếp logic: Ưu tiên cao nhất là việc gấp nhất và có tính blocking (7 và 1). Việc ít quan trọng nhất để cuối (8). Giải thích lý do hợp lý.'
+- id: T06.v1
+  use_case: UC-07
+  criteria:
+  - TC-01
+  - TC-04
+  - TC-02
+  name: Tóm tắt forward email
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: |
+      tóm tắt cho tôi 3 ý chính:
+
+      Kính gửi anh Khoa,
+
+      Tôi viết để báo cáo tình hình dự án Alpha trong tháng qua.
+
+      Về tiến độ: đã hoàn thành 70% kế hoạch, nhưng 2 module Authentication và Payment chậm hơn dự kiến 2 tuần do thay đổi yêu cầu từ khách hàng.
+
+      Về ngân sách: đã chi 65% budget. Dự kiến vượt 8% nếu giữ hướng hiện tại. Có 2 phương án: cắt feature nice-to-have, hoặc xin duyệt thêm 10% ngân sách.
+
+      Về nhân sự: cần tuyển thêm 1 senior backend dev cho module Payment. HR đã có 3 ứng viên.
+
+      Mong anh duyệt và phản hồi trước thứ 6.
+
+      Trân trọng, Minh - PM
+  expected:
+    must_contain:
+    - 70%
+    - ngân sách
+    must_not_contain:
+    - 50%
+    - 100%
+    - 20%
+    eval_notes: 'Trích xuất chính xác 3 ý cốt lõi: Tiến độ 70% (chậm 2 tuần), chi ngân sách 65% (nguy cơ vượt 8%), nhân sự cần 1 senior dev. Tuyệt đối không bịa số liệu.'
+- id: T06.v2
+  use_case: UC-07
+  criteria:
+  - TC-08
+  name: 'Edge: yêu cầu tóm tắt nhưng không paste content'
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: tóm tắt email cho tôi
+  expected:
+    eval_notes: Yêu cầu người dùng cung cấp nội dung email cần tóm tắt.
+- id: T17.v1
+  use_case: UC-08
+  criteria:
+  - TC-01
+  - TC-02
+  name: Tìm thông tin cụ thể trong tài liệu cung cấp
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      Dưới đây là Biên bản họp tháng 3 với đối tác ABC:
+      "Thời gian: 15/03/2026. Nội dung thảo luận: Đối tác ABC đồng ý ký MOU vào ngày 22/03/2026. Đại diện ABC tham dự gồm ông Tan và bà Lee."
+
+      Tìm giúp tôi biên bản họp tháng 3 với ABC nói về ngày ký MOU là ngày nào?
+  expected:
+    must_contain:
+    - 22/03/2026
+    - MOU
+    eval_notes: Truy xuất chính xác ngày ký MOU là 22/03/2026 từ biên bản được cung cấp.
+- id: T07.v1
+  use_case: UC-09
+  criteria:
+  - TC-04
+  - TC-01
+  name: Email formal gửi BGĐ
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: soạn email mời họp Ban Giám đốc, chủ đề Kế hoạch Q3, thứ 2 tuần sau 9h, phòng họp Hội đồng
+  expected:
+    must_contain:
+    - Kính gửi
+    - Q3
+    eval_notes: Format chuẩn, xưng hô 'Kính gửi' tôn trọng, trang trọng phù hợp với cấp BGĐ.
+- id: T07.v2
+  use_case: UC-09
+  criteria:
+  - TC-04
+  name: Email informal gửi nhân viên
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: viết tin nhắn ngắn nhờ em An phòng marketing chuẩn bị slide cho buổi họp ngày mai
+  expected:
+    must_not_contain:
+    - Kính gửi
+    - Quý ngài
+    - Trân trọng
+    eval_notes: Văn phong informal, xưng hô 'em An', thân thiện và chuyên nghiệp vừa phải.
+- id: T07.v3
+  use_case: UC-09
+  criteria:
+  - TC-04
+  - TC-05
+  name: Email tiếng Anh
+  type: realistic
+  language: en
+  turns:
+  - role: user
+    content: draft an email to invite the board for a Q3 planning meeting next Monday 9am in the Boardroom
+  expected:
+    must_contain:
+    - Q3
+    - '9'
+    must_not_contain:
+    - Kính gửi
+    - Trân trọng
+    eval_notes: Email thuần Anh, không pha tiếng Việt, văn phong đúng chuẩn tiếng Anh doanh nghiệp.
+- id: T07.v4
+  use_case: UC-09
+  criteria:
+  - TC-04
+  name: Email xin lỗi khách hàng
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: soạn email xin lỗi khách hàng vì giao trễ 3 ngày do sự cố vận chuyển
+  expected:
+    must_contain:
+    - xin lỗi
+    eval_notes: Tone xin lỗi chân thành, chuyên nghiệp, giải thích ngắn gọn nguyên nhân và đề xuất phương án đền bù.
+- id: T16.v1
+  use_case: UC-10
+  criteria:
+  - TC-01
+  - TC-04
+  - TC-02
+  name: Tạo biên bản họp từ ghi chú thô
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      Tạo biên bản họp dựa trên các ghi chú thô sau:
+      - Họp ngày 19/5 về dự án Beta
+      - Minh: báo cáo code xong 90%
+      - Lan: thiết kế UI bị chậm 1 tuần, hứa xong trước 25/5
+      - Quyết định: Dời ngày demo sang 28/5
+  expected:
+    must_contain:
+    - Biên bản
+    - Beta
+    - 25/5
+    - 28/5
+    eval_notes: Tạo tài liệu biên bản họp có cấu trúc chuẩn chỉnh, trình bày mạch lạc, giữ nguyên thông tin gốc.
+- id: T10.v1
+  use_case: UC-11
+  criteria:
+  - TC-02
+  - TC-01
+  name: Tìm người chưa phản hồi
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      tuần trước gửi yêu cầu báo cáo Q2 cho 4 người:
+      - An: đã gửi báo cáo 2 ngày trước
+      - Bình: đã xác nhận sẽ gửi nhưng chưa thấy
+      - Chi: chưa phản hồi gì
+      - Dũng: đã gửi báo cáo hôm qua
+      ai chưa phản hồi
+  expected:
+    must_contain:
+    - Bình
+    - Chi
+    must_not_contain:
+    - An chưa
+    - Dũng chưa
+    eval_notes: 'Phân tích chính xác trạng thái: Bình (hứa nhưng chưa gửi) và Chi (hoàn toàn im lặng) là những người chưa phản hồi kết quả.'
+- id: T13.v1
+  use_case: UC-12
+  criteria:
+  - TC-02
+  - TC-01
+  name: Action items từ transcript hội thoại tự nhiên
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      trích action items từ transcript họp này:
+
+      An: ok vậy về module login, tôi sẽ làm wireframe xong trước thứ 5
+      Bình: tôi cần wireframe đó để viết API, vậy thứ 6 tôi gửi spec được không
+      An: ok thứ 6 fine
+      Chi: còn phần test thì sao
+      Bình: Chi review test plan luôn nhé, giúp tôi check coverage
+      Chi: ok tôi review trong tuần này
+      An: à và mọi người nhớ update progress trên Jira mỗi thứ 3 hàng tuần
+      Bình: ok deal
+      Chi: ok
+  expected:
+    must_contain:
+    - An
+    - Bình
+    - Chi
+    eval_notes: 'Trích xuất đầy đủ 4 action items: An (wireframe login - trước thứ 5), Bình (API spec - thứ 6), Chi (review test plan - trong tuần), Tất cả (update progress Jira - thứ 3 hàng tuần).'
+- id: T13.v2
+  use_case: UC-12
+  criteria:
+  - TC-01
+  - TC-08
+  name: Transcript không có action item rõ
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      trích action items công việc (chỉ task liên quan công việc, bỏ qua hội thoại xã giao):
+
+      A: nay thời tiết đẹp ha
+      B: ừ mai rảnh đi cà phê Highland chơi
+      A: ok nha
+  expected:
+    eval_notes: Hội thoại xã giao thuần tuý (rủ đi cà phê), KHÔNG có action item công việc. Bot phải trả lời 'không có action item công việc nào'.
+- id: T14.v1
+  use_case: UC-13
+  criteria:
+  - TC-04
+  - TC-02
+  - TC-01
+  name: Brief cho cuộc họp đối tác khi có dữ liệu
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      Dữ liệu lịch sử:
+      - Đối tác Singapore: Keppel Corp.
+      - Dự án trước đó: Hoàn thành ký MOU đầu tư 10 triệu USD.
+      - Trọng tâm cuộc họp hôm nay: Đàm phán triển khai thực tế giai đoạn 1 mở rộng Đông Nam Á.
+
+      Hãy chuẩn bị brief cho cuộc họp với đối tác Singapore chiều nay.
+  expected:
+    must_contain:
+    - Keppel Corp
+    - MOU
+    - 10 triệu USD
+    eval_notes: Tạo tóm tắt chuẩn bị họp (brief) súc tích, chuyên nghiệp dựa trên dữ liệu lịch sử đối tác.
+- id: T08.v1
+  use_case: UC-14
+  criteria:
+  - TC-02
+  - TC-01
+  name: Phát hiện xung đột
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      có 2 cuộc họp này check giúp:
+      - 14:00-15:00: họp Marketing phòng A
+      - 14:30-15:30: họp BGĐ phòng họp lớn
+  expected:
+    must_contain:
+    - trùng
+    - xung đột
+    eval_notes: Nhận biết chính xác xung đột thời gian trong khung giờ overlap (14:30 - 15:00).
+- id: T08.v2
+  use_case: UC-14
+  criteria:
+  - TC-02
+  - TC-01
+  name: Không có xung đột
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      có trùng không:
+      - 9:00-10:00: họp team A
+      - 11:00-12:00: họp team B
+  expected:
+    must_not_contain:
+    - trùng
+    - xung đột
+    - overlap
+    eval_notes: Xác nhận chính xác 2 lịch họp không trùng lặp và không có bất kỳ cảnh báo sai lệch nào.
+- id: ML.v3
+  use_case: UC-15
+  criteria:
+  - TC-05
+  name: Code-switch mixed
+  type: realistic
+  language: mixed
+  turns:
+  - role: user
+    content: send a meeting invitation cho team marketing vào 9am thứ 2
+  expected:
+    eval_notes: Xử lý thông minh khi người dùng trộn tiếng Anh/Việt. Ưu tiên trả lời bằng tiếng Việt lịch sự.
+- id: T05.v1
+  use_case: UC-16
+  criteria:
+  - TC-03
+  - TC-02
+  name: 4-turn đặt lịch tích lũy info
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: đặt lịch họp với team kỹ thuật
+  - role: assistant
+    content: Vâng, anh muốn đặt khi nào ạ?
+  - role: user
+    content: thứ 5
+  - role: assistant
+    content: Thứ 5 này, mấy giờ ạ?
+  - role: user
+    content: 10h sáng
+  - role: assistant
+    content: Vâng. Họp ở đâu ạ?
+  - role: user
+    content: phòng meeting B tầng 3
+  expected:
+    must_contain:
+    - team kỹ thuật
+    - '10'
+    - phòng
+    must_not_contain:
+    - với ai
+    - ngày nào
+    - thời gian nào
+    eval_notes: Tổng hợp đủ toàn bộ thông tin tích lũy qua 4 lượt để xác nhận một lịch họp hoàn tất.
+- id: T05.v2
+  use_case: UC-16
+  criteria:
+  - TC-03
+  name: Đổi ý giữa chừng
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: tạo task gửi báo cáo cho Minh deadline thứ 6
+  - role: assistant
+    content: 'Đã ghi. Task: gửi báo cáo / assignee: Minh / deadline: thứ 6.'
+  - role: user
+    content: đổi sang thứ 2 tuần sau
+  expected:
+    must_contain:
+    - thứ 2
+    - Minh
+    eval_notes: Cập nhật chính xác deadline mới sang thứ 2, đồng thời giữ nguyên công việc và người được giao.
+- id: T05.v3
+  use_case: UC-16
+  criteria:
+  - TC-03
+  name: Reference vague 'cuộc họp đó'
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: đặt lịch họp với CEO 14h thứ 4
+  - role: assistant
+    content: Đã đặt lịch họp với CEO, thứ 4, 14:00.
+  - role: user
+    content: dời cuộc họp đó sang 15h đi
+  expected:
+    must_contain:
+    - '15'
+    must_not_contain:
+    - cuộc họp nào
+    eval_notes: Xác định đại từ chỉ định 'cuộc họp đó' chính là cuộc họp với CEO lúc 14h vừa đặt để tiến hành dời giờ.
+- id: T05.v4
+  use_case: UC-16
+  criteria:
+  - TC-03
+  - TC-08
+  name: Push back — sếp không thích response
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: soạn email xin lỗi khách hàng vì giao hàng trễ
+  - role: assistant
+    content: |-
+      Kính gửi quý khách,
+
+      Chúng tôi thành thật xin lỗi vì sự chậm trễ trong việc giao hàng vừa qua. Đội ngũ của chúng tôi đã làm việc hết sức để khắc phục...
+  - role: user
+    content: viết lại ngắn hơn
+  expected:
+    eval_notes: Lắng nghe ý kiến của sếp và tạo phiên bản 2 tối giản, ngắn gọn hơn rõ rệt.
+- id: T05.v5
+  use_case: UC-16
+  criteria:
+  - TC-03
+  name: Chuyển ngữ cảnh đột ngột
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: lịch họp BGĐ thứ 4 có chưa
+  - role: assistant
+    content: Tôi chưa có thông tin về lịch họp BGĐ thứ 4. Anh có thể cho biết thêm chi tiết không?
+  - role: user
+    content: à mà email khách hàng C đâu rồi
+  expected:
+    must_not_contain:
+    - BGĐ
+    - thứ 4
+    eval_notes: Nhận biết việc sếp đổi chủ đề đột ngột từ họp hành sang email và tập trung trả lời câu hỏi mới.
+- id: T09.v1
+  use_case: UC-17
+  criteria:
+  - TC-02
+  - TC-01
+  - TC-04
+  name: Báo cáo cuối ngày
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      tổng hợp báo cáo cuối ngày từ task list:
+      - A: gửi proposal client X — DONE
+      - B: review code Auth — DONE
+      - C: họp Design — DONE
+      - D: viết spec Payment — CHƯA, hạn ngày mai
+      - E: kiểm tra báo cáo Q2 — QUÁ HẠN từ hôm qua
+  expected:
+    must_contain:
+    - hoàn thành
+    - quá hạn
+    eval_notes: 'Tạo cấu trúc báo cáo định dạng chuẩn: Nhóm 3 công việc hoàn thành (A, B, C), 1 công việc sắp đến hạn (D), 1 công việc quá hạn (E).'
+- id: T11.v1
+  use_case: UC-18
+  criteria:
+  - TC-02
+  - TC-01
+  name: Tạo task từ biên bản có cấu trúc
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      biên bản họp 19/5:
+      Action items:
+      1. An: thiết kế UI module Login, deadline 25/5
+      2. Bình: API spec module Auth, deadline 23/5
+      3. Chi: review test plan, deadline 22/5
+
+      tạo task cho từng item và xác nhận
+  expected:
+    must_contain:
+    - An
+    - Bình
+    - Chi
+    - 25/5
+    - 23/5
+    - 22/5
+    eval_notes: Kích hoạt chuỗi tạo 3 task riêng biệt gán đúng người và đúng thời hạn hoàn thành tương ứng.
+- id: VRB.v1
+  use_case: '*'
+  criteria:
+  - TC-02
+  - TC-08
+  name: Chỉ định trả lời 1 câu
+  type: realistic
+  language: vi
+  thinking_compare: true
+  turns:
+  - role: user
+    content: 'trả lời CHỈ trong 1 câu: chiến lược tốt nhất để giảm thời gian họp là gì'
+  expected:
+    eval_notes: Phải trả lời đúng 1 câu duy nhất. Không viết thêm đoạn phân tích hay kết luận dài dòng.
+- id: VRB.v2
+  use_case: '*'
+  criteria:
+  - TC-02
+  name: Yes/No question
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: có nên dời cuộc họp 14h sang chiều mai không, biết là ngày mai tôi đang đi công tác
+  expected:
+    eval_notes: Đưa ra khuyến nghị Có/Không (ở đây là KHÔNG nên dời sang mai vì sếp đi công tác) kèm theo lý giải cực kỳ ngắn gọn.
+- id: MTH.v1
+  use_case: UC-17
+  criteria:
+  - TC-01
+  name: Tính tỉ lệ hoàn thành
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      tôi có 7 task: A done, B done, C pending, D done, E overdue, F done, G done. Tỉ lệ hoàn thành?
+  expected:
+    must_contain:
+    - '71'
+    eval_notes: 'Tính chính xác tỉ lệ hoàn thành: 5/7 = 71.4%.'
+- id: MTH.v2
+  use_case: UC-02
+  criteria:
+  - TC-01
+  - TC-06
+  name: Tính ngày
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: task này deadline 25/5 — hôm nay là 19/5 — còn bao nhiêu ngày
+  expected:
+    must_contain:
+    - '6'
+    eval_notes: 'Tính toán khoảng cách ngày chính xác: còn lại 6 ngày.'
+- id: MTK.v1
+  use_case: UC-18
+  criteria:
+  - TC-02
+  - TC-01
+  name: 3 việc trong 1 lệnh
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: đặt lịch họp BGĐ thứ 4 9h, soạn agenda gửi mọi người, và nhắc tôi review trước 1 ngày
+  expected:
+    must_contain:
+    - BGĐ
+    - agenda
+    eval_notes: 'Phân tách rõ và xử lý đồng thời 3 hành động: 1. Đặt lịch họp BGĐ, 2. Soạn email chương trình (agenda), 3. Tạo lịch nhắc xem lại trước 1 ngày.'
+- id: MTK.v2
+  use_case: UC-18
+  criteria:
+  - TC-02
+  name: 2 việc kèm điều kiện
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: nếu Minh xác nhận đến họp thì gửi anh ấy bộ tài liệu, không thì hủy lịch đi
+  expected:
+    eval_notes: Hiểu đúng tư duy rẽ nhánh điều kiện (nếu A thì làm X, nếu không thì làm Y) và xác nhận rõ hai nhánh xử lý.
+- id: RB.v1
+  use_case: '*'
+  criteria:
+  - TC-08
+  name: Ngoài phạm vi
+  type: edge
+  language: vi
+  turns:
+  - role: user
+    content: đặt vé máy bay đi Tokyo tuần sau
+  expected:
+    eval_notes: Từ chối khéo léo vì nằm ngoài phạm vi nghiệp vụ thư ký ảo hỗ trợ quản lý lịch/công việc nội bộ.
+- id: RB.v2
+  use_case: '*'
+  criteria:
+  - TC-08
+  name: Mâu thuẫn trong câu
+  type: edge
+  language: vi
+  turns:
+  - role: user
+    content: đặt lịch họp thứ 2 ngày 25/5 lúc 9h. à không, 26/5.
+  expected:
+    must_contain:
+    - '26'
+    eval_notes: Ưu tiên xử lý theo dữ liệu hiệu đính mới nhất ở cuối câu (ngày 26/5).
+- id: RB.v3
+  use_case: '*'
+  criteria:
+  - TC-08
+  name: Câu rất cụt
+  type: edge
+  language: vi
+  turns:
+  - role: user
+    content: huỷ
+  expected:
+    eval_notes: Phải hỏi rõ đối tượng muốn hủy là gì (hủy lịch họp, hủy task hay hủy soạn thư).
+- id: RB.v4
+  use_case: '*'
+  criteria:
+  - TC-08
+  - TC-02
+  name: Sai chính tả nặng + viết tắt
+  type: edge
+  language: vi
+  turns:
+  - role: user
+    content: nhc t hop vs CEO 2h c.nay nha
+  expected:
+    eval_notes: Dịch nghĩa chuẩn xác ngôn ngữ viết tắt/sai chính tả ('nhắc tôi họp với CEO lúc 2h chiều nay nhé') và xác nhận hành động tương ứng.
+- id: TMP.v2
+  use_case: UC-02
+  criteria:
+  - TC-06
+  - TC-01
+  name: Số ngày đã trôi qua
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: task A bắt đầu 10/5/2026, deadline 24/5/2026, hôm nay là 19/5/2026 — đã chạy bao nhiêu ngày
+  expected:
+    must_contain:
+    - '9'
+    eval_notes: 10/5/2026 → 19/5/2026 = 9 ngày đã trôi qua. Đầy đủ context, không cần hỏi lại năm.
+- id: TMP.v3
+  use_case: UC-02
+  criteria:
+  - TC-06
+  name: Cuối tháng này là ngày bao nhiêu
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: deadline cuối tháng này rơi vào ngày bao nhiêu, hôm nay 21/5
+  expected:
+    must_contain:
+    - '31'
+    eval_notes: Tháng 5 có 31 ngày → cuối tháng = 31/5.
+- id: TMP.v5
+  use_case: UC-04
+  criteria:
+  - TC-06
+  - TC-02
+  name: Nhắc sau N tiếng nữa
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: bây giờ 9h sáng, nhắc tôi gọi anh Long sau 3 tiếng nữa
+  expected:
+    must_contain:
+    - Long
+    - '12'
+    eval_notes: 9h + 3h = 12h trưa. Xác nhận task nhắc gọi anh Long lúc 12h.
+- id: TMP.v6
+  use_case: UC-02
+  criteria:
+  - TC-06
+  - TC-01
+  name: Số tuần còn lại trong quý
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: Q2 kết thúc 30/6/2026. Hôm nay 21/5/2026. Tính theo lịch dương, còn bao nhiêu tuần đến hết Q2?
+  expected:
+    eval_notes: Từ 21/5 đến 30/6 = 40 ngày ≈ 5-6 tuần dương lịch (chấp nhận 5, 5.5, 5-6, hoặc 6). Không cần lịch làm việc.
+- id: CST.v2
+  use_case: UC-09
+  criteria:
+  - TC-09
+  - TC-04
+  name: Email format nhất quán qua nhiều lần
+  type: realistic
+  language: vi
+  rerun: 3
+  turns:
+  - role: user
+    content: soạn email cảm ơn đối tác sau cuộc họp hôm nay
+  expected:
+    eval_notes: 3 phiên bản email có thể khác nhau về chữ nhưng đều giữ format chuẩn (kính gửi/lời cảm ơn/kết). Không lần nào lệch format hay đổi ngôn ngữ.
+- id: CST.v3
+  use_case: UC-02
+  criteria:
+  - TC-09
+  - TC-01
+  - TC-06
+  name: Phép toán ngày nhất quán
+  type: realistic
+  language: vi
+  rerun: 3
+  turns:
+  - role: user
+    content: deadline 25/5/2026, hôm nay 19/5/2026, còn bao nhiêu ngày
+  expected:
+    must_contain:
+    - '6'
+    eval_notes: Cả 3 lần đều phải ra 6 ngày — accuracy + consistency. Đầy đủ context, không cần hỏi năm.
+- id: LNG.v3
+  use_case: UC-09
+  criteria:
+  - TC-05
+  - TC-02
+  name: EN dài — không drift sang VN
+  type: realistic
+  language: en
+  turns:
+  - role: user
+    content: |
+      draft a 5-bullet weekly status update for my CEO covering:
+      1) sales pipeline
+      2) hiring
+      3) product launch
+      4) customer escalations
+      5) board prep
+  expected:
+    must_not_contain:
+    - Dạ
+    - Kính gửi
+    - Trân trọng
+    - ạ.
+    - thưa
+    eval_notes: Email dài, không được drift sang tiếng Việt ở bất kỳ bullet nào.
+- id: TON.v1
+  use_case: UC-09
+  criteria:
+  - TC-04
+  - TC-02
+  name: Nhắn cấp dưới — informal
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: nhắn em Linh phòng kế toán nộp bảng lương tháng trước trước cuối ngày mai
+  expected:
+    must_contain:
+    - Linh
+    must_not_contain:
+    - Kính gửi
+    - Trân trọng quý
+    eval_notes: Tin nhắn ngắn gửi cấp dưới — văn phong informal, không dùng kính ngữ trang trọng quá mức.
+- id: TON.v2
+  use_case: UC-09
+  criteria:
+  - TC-04
+  - TC-01
+  name: Email gửi cấp trên — trang trọng
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: soạn email gửi Chủ tịch HĐQT báo cáo kết quả công tác tháng 5
+  expected:
+    must_contain:
+    - Kính gửi
+    eval_notes: Email gửi Chủ tịch → văn phong trang trọng, đầy đủ cấu trúc (Kính gửi/Nội dung/Trân trọng).
+- id: ACC.v1
+  use_case: UC-17
+  criteria:
+  - TC-01
+  name: Tỉ lệ phần trăm khác
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: team có 12 người, 9 hoàn thành KPI tháng. Tỉ lệ hoàn thành?
+  expected:
+    must_contain:
+    - '75'
+    eval_notes: 9/12 = 75% — phải ra đúng con số 75.
+- id: ACC.v2
+  use_case: UC-08
+  criteria:
+  - TC-01
+  - TC-02
+  name: Trích số từ đoạn báo cáo dài
+  type: reasoning_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      Báo cáo Q1: doanh thu 12.5 tỷ (tăng 18% YoY), chi phí 9.2 tỷ, lợi nhuận trước thuế 3.3 tỷ. Khách hàng mới: 145.
+
+      Cho tôi biết lợi nhuận trước thuế Q1.
+  expected:
+    must_contain:
+    - '3.3'
+    must_not_contain:
+    - 12.5 tỷ lợi nhuận
+    - 9.2 tỷ lợi nhuận
+    eval_notes: Trích đúng số lợi nhuận trước thuế 3.3 tỷ, không nhầm với doanh thu/chi phí.
+- id: INT.v1
+  use_case: '*'
+  criteria:
+  - TC-02
+  - TC-01
+  name: 2 intent trái nhau trong 1 câu
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: hủy lịch họp 3h chiều nay và thay vào đó nhắc tôi gọi cho Hùng
+  expected:
+    must_contain:
+    - Hùng
+    eval_notes: Nhận diện 2 intent (cancel meeting + create reminder), xác nhận xử lý cả 2 hành động.
+- id: INT.v2
+  use_case: '*'
+  criteria:
+  - TC-02
+  - TC-08
+  name: Intent mơ hồ — chỉ định không rõ
+  type: edge
+  language: vi
+  turns:
+  - role: user
+    content: thế còn cái kia
+  expected:
+    eval_notes: Câu mơ hồ, không có context trước → phải hỏi lại 'cái kia' đề cập tới việc gì.
+- id: CTX.v1
+  use_case: UC-04
+  criteria:
+  - TC-02
+  - TC-08
+  name: Đề xuất tạo task từ ngữ cảnh (user chưa ra lệnh)
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: vừa gặp khách xong, họ muốn nhận báo giá trước thứ Năm
+  expected:
+    eval_notes: User chỉ KỂ tình huống, chưa ra lệnh tạo task. Trợ lý tốt phải NHẬN RA việc cần làm và CHỦ ĐỘNG đề xuất tạo task 'Gửi báo giá' với deadline hợp lý (trước/đúng thứ Năm), hỏi xác nhận. Không bỏ lơ kiểu chỉ đáp 'vâng ạ'.
+- id: CTX.v2
+  use_case: UC-18
+  criteria:
+  - TC-02
+  - TC-01
+  name: Đề xuất chuỗi task từ dự án mới
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: mình vừa nhận dự án mới, phải kick-off tuần sau
+  expected:
+    eval_notes: 'Nhận diện nhu cầu chuẩn bị kick-off và đề xuất chuỗi task hợp lý (vd: soạn agenda, gửi lịch mời team, chuẩn bị tài liệu), hỏi xác nhận trước khi tạo. Chủ động nhưng không tự ý tạo khi user chưa xác nhận.'
+- id: NXT.v1
+  use_case: UC-05
+  criteria:
+  - TC-02
+  - TC-03
+  name: Đề xuất follow-up sau khi task hoàn thành
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: đánh dấu xong task gửi báo giá khách A
+  expected:
+    eval_notes: 'Xác nhận đã cập nhật task hoàn thành rồi CHỦ ĐỘNG đề xuất bước tiếp tự nhiên (vd: tạo task follow-up chờ phản hồi khách A, đặt nhắc sau 2 ngày). Nối mạch công việc, không kết thúc cụt.'
+- id: EMO.v1
+  use_case: UC-06
+  criteria:
+  - TC-04
+  - TC-08
+  name: User stress — đồng cảm trước khi liệt kê
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: trời ơi hôm nay việc nhiều quá mệt mỏi thật
+  expected:
+    eval_notes: User đang quá tải cảm xúc. Trợ lý nên ĐỒNG CẢM ngắn gọn trước, rồi đề xuất giúp lọc 2-3 việc quan trọng nhất để tập trung. KHÔNG đổ ngay một danh sách dài/numbered list gây thêm áp lực.
+- id: EMO.v2
+  use_case: UC-06
+  criteria:
+  - TC-04
+  - TC-08
+  name: User thất vọng — an ủi, không ép việc
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: khách không chốt, mệt lắm
+  expected:
+    eval_notes: 'Đồng cảm tự nhiên với sự thất vọng, gợi ý nhẹ bước tiếp (vd: ghi nhận lý do khách từ chối để cải thiện) NHƯNG để user chọn, không ép làm việc ngay khi đang mệt. Tông người, không máy móc.'
+- id: CHN.v1
+  use_case: UC-14
+  criteria:
+  - TC-06
+  - TC-02
+  name: Lập chuỗi nhắc chuẩn bị theo timeline
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: thứ Sáu này tôi có họp board quan trọng
+  expected:
+    eval_notes: 'Hiểu mốc ''thứ Sáu'' và đề xuất CHUỖI nhắc chuẩn bị lùi dần (vd: soạn tài liệu thứ Ba/Tư, review thứ Tư/Năm, gửi trước họp thứ Năm). Các mốc phải đứng TRƯỚC thứ Sáu và đúng thứ tự thời gian, hỏi xác nhận trước khi đặt.'
+- id: FLW.v1
+  use_case: UC-11
+  criteria:
+  - TC-02
+  - TC-08
+  name: Nhắc người phụ trách + cam kết theo dõi
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: nhắc Hùng đẩy nhanh task báo cáo giúp tôi
+  expected:
+    must_contain:
+    - Hùng
+    eval_notes: Xác nhận sẽ nhắc Hùng và cam kết theo dõi, báo lại user nếu vẫn chưa có cập nhật. Hành động cụ thể, không chỉ nói 'vâng'.
+- id: RLY.v1
+  use_case: UC-11
+  criteria:
+  - TC-02
+  - TC-04
+  name: Truyền lời + chủ động theo dõi phản hồi
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: nhắn Hùng là chiều họp sớm hơn 30 phút
+  expected:
+    must_contain:
+    - Hùng
+    - '30'
+    eval_notes: Soạn nội dung tin nhắn cho Hùng (chiều họp sớm 30 phút) và CHỦ ĐỘNG đề xuất gửi rồi theo dõi, báo lại khi Hùng xác nhận. Văn phong thân thiện, không robot kiểu 'tin nhắn đã được gửi'. Chấp nhận soạn nháp/đề xuất gửi; không ép phải khẳng định đã gửi.
+- id: FGT.v1
+  use_case: UC-05
+  criteria:
+  - TC-04
+  - TC-08
+  name: Xử lý khi user quên việc
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: chết, hôm qua anh quên mất một việc rồi
+  expected:
+    eval_notes: Trấn an nhẹ nhàng (không trách), đề nghị rà lại task tồn của hôm qua và đề xuất dời sang hôm nay + đặt nhắc theo mốc mới. Không đoán bừa đó là việc gì khi chưa có data.

@@ -1092,3 +1092,180 @@ test_cases:
       - {role: user, content: "thế còn cái kia"}
     expected:
       eval_notes: "Câu mơ hồ, không có context trước → phải hỏi lại 'cái kia' đề cập tới việc gì."
+
+  # ═════════════════════════════════════════════════════════════
+  # AI CHỦ ĐỘNG & TƯƠNG TÁC — bổ sung từ "Huấn luyện DS- V1.xlsx"
+  # Phủ các nhóm yaml còn thiếu: proactive check-in, cảnh báo trước
+  # khi trễ, đề xuất task từ ngữ cảnh, follow/escalate, truyền lời,
+  # chuỗi nhắc theo timeline, đồng cảm cảm xúc, xử lý quên việc.
+  # LƯU Ý: case proactive luôn INJECT data trong turn để hành vi
+  # khẳng định KHÔNG bị tính là hallucination.
+  # ═════════════════════════════════════════════════════════════
+
+  - id: PRO.v1
+    use_case: UC-17
+    criteria: [TC-01, TC-02, TC-08]
+    name: "AI chủ động check-in đầu ngày"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          [Sự kiện hệ thống] 8h sáng, người dùng vừa mở app, chưa nhắn gì.
+          Dữ liệu hôm nay:
+          - Task sắp đến hạn: "Gửi báo giá khách A" (hạn 17h), "Duyệt hợp đồng B" (hạn 15h), "Review CV" (hạn cuối ngày)
+          - Lịch: họp team lúc 14h
+          Hãy chủ động chào và hỗ trợ user bắt đầu ngày làm việc.
+    expected:
+      must_contain: ["3", "14"]
+      eval_notes: "Chủ động tóm tắt đúng 3 task sắp đến hạn + cuộc họp 14h rồi hỏi user muốn ưu tiên việc nào. KHÔNG bịa thêm task/lịch ngoài dữ liệu. Tông tự nhiên, không robot kiểu 'hệ thống đã ghi nhận'."
+
+  - id: PRO.v2
+    use_case: UC-17
+    criteria: [TC-01, TC-02]
+    name: "AI tóm tắt khi sếp đi vắng về"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          [Sự kiện hệ thống] Sếp vừa đăng nhập sau 3 ngày nghỉ.
+          Trong thời gian sếp vắng:
+          - 2 task đã hoàn thành: "Ký hợp đồng X", "Gửi báo cáo Q2"
+          - 1 task bị chậm: "Chuẩn bị slide BGĐ"
+          - 4 tin nhắn từ team đang chờ sếp phản hồi
+          Hãy chủ động tóm tắt nhanh tình hình cho sếp.
+    expected:
+      must_contain: ["2", "chậm", "4"]
+      eval_notes: "Tóm tắt đúng: 2 task xong, 1 task chậm (nêu tên), 4 tin chờ; đề xuất xem chi tiết. Xưng hô 'sếp', không bịa thêm số liệu khác."
+
+  - id: PRO.v3
+    use_case: UC-14
+    criteria: [TC-01, TC-06, TC-08]
+    name: "AI chủ động cảnh báo task sắp trễ"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          [Sự kiện hệ thống] Hiện 13h. Task "Gửi báo giá khách E" có hạn 17h hôm nay nhưng người phụ trách (Hùng) chưa cập nhật tiến độ.
+          Hãy chủ động cảnh báo user về nguy cơ trễ.
+    expected:
+      must_contain: ["báo giá khách E", "4"]
+      eval_notes: "Cảnh báo còn ~4 tiếng đến hạn (13h→17h) mà chưa có cập nhật, đề xuất hành động cụ thể (nhắc Hùng cập nhật ngay). KHÔNG bịa trạng thái 'đã xong/đang làm' khi data không nêu."
+
+  - id: CTX.v1
+    use_case: UC-04
+    criteria: [TC-02, TC-08]
+    name: "Đề xuất tạo task từ ngữ cảnh (user chưa ra lệnh)"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "vừa gặp khách xong, họ muốn nhận báo giá trước thứ Năm"}
+    expected:
+      eval_notes: "User chỉ KỂ tình huống, chưa ra lệnh tạo task. Trợ lý tốt phải NHẬN RA việc cần làm và CHỦ ĐỘNG đề xuất tạo task 'Gửi báo giá' với deadline hợp lý (trước/đúng thứ Năm), hỏi xác nhận. Không bỏ lơ kiểu chỉ đáp 'vâng ạ'."
+
+  - id: CTX.v2
+    use_case: UC-18
+    criteria: [TC-02, TC-01]
+    name: "Đề xuất chuỗi task từ dự án mới"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "mình vừa nhận dự án mới, phải kick-off tuần sau"}
+    expected:
+      eval_notes: "Nhận diện nhu cầu chuẩn bị kick-off và đề xuất chuỗi task hợp lý (vd: soạn agenda, gửi lịch mời team, chuẩn bị tài liệu), hỏi xác nhận trước khi tạo. Chủ động nhưng không tự ý tạo khi user chưa xác nhận."
+
+  - id: NXT.v1
+    use_case: UC-05
+    criteria: [TC-02, TC-03]
+    name: "Đề xuất follow-up sau khi task hoàn thành"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "đánh dấu xong task gửi báo giá khách A"}
+    expected:
+      eval_notes: "Xác nhận đã cập nhật task hoàn thành rồi CHỦ ĐỘNG đề xuất bước tiếp tự nhiên (vd: tạo task follow-up chờ phản hồi khách A, đặt nhắc sau 2 ngày). Nối mạch công việc, không kết thúc cụt."
+
+  - id: EMO.v1
+    use_case: UC-06
+    criteria: [TC-04, TC-08]
+    name: "User stress — đồng cảm trước khi liệt kê"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "trời ơi hôm nay việc nhiều quá mệt mỏi thật"}
+    expected:
+      eval_notes: "User đang quá tải cảm xúc. Trợ lý nên ĐỒNG CẢM ngắn gọn trước, rồi đề xuất giúp lọc 2-3 việc quan trọng nhất để tập trung. KHÔNG đổ ngay một danh sách dài/numbered list gây thêm áp lực."
+
+  - id: EMO.v2
+    use_case: UC-06
+    criteria: [TC-04, TC-08]
+    name: "User thất vọng — an ủi, không ép việc"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "khách không chốt, mệt lắm"}
+    expected:
+      eval_notes: "Đồng cảm tự nhiên với sự thất vọng, gợi ý nhẹ bước tiếp (vd: ghi nhận lý do khách từ chối để cải thiện) NHƯNG để user chọn, không ép làm việc ngay khi đang mệt. Tông người, không máy móc."
+
+  - id: CHN.v1
+    use_case: UC-14
+    criteria: [TC-06, TC-02]
+    name: "Lập chuỗi nhắc chuẩn bị theo timeline"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "thứ Sáu này tôi có họp board quan trọng"}
+    expected:
+      eval_notes: "Hiểu mốc 'thứ Sáu' và đề xuất CHUỖI nhắc chuẩn bị lùi dần (vd: soạn tài liệu thứ Ba/Tư, review thứ Tư/Năm, gửi trước họp thứ Năm). Các mốc phải đứng TRƯỚC thứ Sáu và đúng thứ tự thời gian, hỏi xác nhận trước khi đặt."
+
+  - id: FLW.v1
+    use_case: UC-11
+    criteria: [TC-02, TC-08]
+    name: "Nhắc người phụ trách + cam kết theo dõi"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "nhắc Hùng đẩy nhanh task báo cáo giúp tôi"}
+    expected:
+      must_contain: ["Hùng"]
+      eval_notes: "Xác nhận sẽ nhắc Hùng và cam kết theo dõi, báo lại user nếu vẫn chưa có cập nhật. Hành động cụ thể, không chỉ nói 'vâng'."
+
+  - id: FLW.v2
+    use_case: UC-11
+    criteria: [TC-01, TC-02]
+    name: "Escalate khi sếp hỏi task chậm"
+    type: reasoning_with_data
+    language: vi
+    turns:
+      - role: user
+        content: |
+          Task "Triển khai hệ thống CRM" kế hoạch xong 18/5, hôm nay là 19/5 vẫn chưa hoàn thành, người phụ trách: Minh.
+          Sao task này chậm thế?
+    expected:
+      must_contain: ["1 ngày", "Minh"]
+      eval_notes: "Báo đúng trạng thái (chậm 1 ngày so với kế hoạch 18/5) và đề xuất hành động (nhắc Minh ngay / xin bản cập nhật). KHÔNG bịa nguyên nhân cụ thể nếu data không nêu."
+
+  - id: RLY.v1
+    use_case: UC-11
+    criteria: [TC-02, TC-04]
+    name: "Truyền lời + chủ động theo dõi phản hồi"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "nhắn Hùng là chiều họp sớm hơn 30 phút"}
+    expected:
+      must_contain: ["Hùng", "30"]
+      eval_notes: "Soạn nội dung tin nhắn cho Hùng (chiều họp sớm 30 phút) và CHỦ ĐỘNG đề xuất gửi rồi theo dõi, báo lại khi Hùng xác nhận. Văn phong thân thiện, không robot kiểu 'tin nhắn đã được gửi'. Chấp nhận soạn nháp/đề xuất gửi; không ép phải khẳng định đã gửi."
+
+  - id: FGT.v1
+    use_case: UC-05
+    criteria: [TC-04, TC-08]
+    name: "Xử lý khi user quên việc"
+    type: realistic
+    language: vi
+    turns:
+      - {role: user, content: "chết, hôm qua anh quên mất một việc rồi"}
+    expected:
+      eval_notes: "Trấn an nhẹ nhàng (không trách), đề nghị rà lại task tồn của hôm qua và đề xuất dời sang hôm nay + đặt nhắc theo mốc mới. Không đoán bừa đó là việc gì khi chưa có data."

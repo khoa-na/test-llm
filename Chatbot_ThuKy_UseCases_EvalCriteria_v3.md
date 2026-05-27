@@ -2,7 +2,7 @@
 
 > **Mục đích:** Tài liệu tổng hợp use cases, tiêu chí đánh giá model AI, ma trận so sánh và hướng dẫn test cho hệ thống chatbot nhắc việc & hỗ trợ thư ký lãnh đạo.
 
-> **Phạm vi shortlist (v3):** Chỉ tập trung vào 4 model dưới 10B đã được chọn để test thực tế: **Qwen3.5-9B**, **Qwen3-8B**, **Gemma 4-E4B**, **DeepSeek-R1-0528-Qwen3-8B**.
+> **Phạm vi shortlist (v3):** Chỉ tập trung vào 3 model dưới 10B đã được chọn để test thực tế: **Qwen3.5-9B**, **Gemma 4-E4B**, **DeepSeek-R1-0528-Qwen3-8B**.
 
 ---
 
@@ -12,7 +12,7 @@
 2. [Tiêu chí Đánh giá Model](#2-tiêu-chí-đánh-giá-model)
 3. [Ma trận Đánh giá Model](#3-ma-trận-đánh-giá-model)
 4. [Hướng dẫn Test & Mẫu Prompt](#4-hướng-dẫn-test--mẫu-prompt)
-5. [Thông tin 4 Model trong Shortlist](#5-thông-tin-4-model-trong-shortlist)
+5. [Thông tin 3 Model trong Shortlist](#5-thông-tin-3-model-trong-shortlist)
 
 ---
 
@@ -308,31 +308,30 @@
 | Model | Tham số | Context | Phát hành | License |
 |---|---|---|---|---|
 | Qwen3.5-9B (Alibaba) | 9B / 262K ctx | 262K → 1M (YaRN) | 03/2026 🆕 Mới nhất | Apache 2.0 |
-| Qwen3-8B (Alibaba) | 8B / 131K ctx | 131K | 04/2025 ✅ Baseline kiểm chứng | Apache 2.0 |
 | Gemma 4-E4B (Google) | ~4.5B effective / 128K ctx | 128K | 04/2026 🆕 Mới nhất | Gemma License |
 | DeepSeek-R1-0528-Qwen3-8B (DeepSeek) | 8B / 128K ctx | 128K | 05/2025 💡 Reasoning | MIT |
 
 ### Bảng chấm điểm
 
-| Tiêu chí | Trọng số | Qwen3.5-9B | Qwen3-8B | Gemma 4-E4B | DeepSeek-R1-0528-Qwen3-8B |
-|---|---|---|---|---|---|
-| TC-01 Accuracy | 20% | | | | |
-| TC-02 Intent Recognition | 18% | | | | |
-| TC-03 Multi-turn | 15% | | | | |
-| TC-04 Language Quality | 12% | | | | |
-| TC-05 Multilingual | 8% | | | | |
-| TC-06 Temporal Reasoning | 12% | | | | |
-| TC-07 Latency | 7% | | | | |
-| TC-08 Robustness | 8% | | | | |
-| TC-09 Consistency | 5% | | | | |
-| TC-10 Cost Efficiency | 5% | | | | |
-| **TỔNG ĐIỂM** | **100%** | | | | |
+| Tiêu chí | Trọng số | Qwen3.5-9B | Gemma 4-E4B | DeepSeek-R1-0528-Qwen3-8B |
+|---|---|---|---|---|
+| TC-01 Accuracy | 20% | | | |
+| TC-02 Intent Recognition | 18% | | | |
+| TC-03 Multi-turn | 15% | | | |
+| TC-04 Language Quality | 12% | | | |
+| TC-05 Multilingual | 8% | | | |
+| TC-06 Temporal Reasoning | 12% | | | |
+| TC-07 Latency | 7% | | | |
+| TC-08 Robustness | 8% | | | |
+| TC-09 Consistency | 5% | | | |
+| TC-10 Cost Efficiency | 5% | | | |
+| **TỔNG ĐIỂM** | **100%** | | | |
 
 > **📌 Ghi chú quan trọng cho test:**
-> - **Thinking mode:** Qwen3.5-9B, Qwen3-8B và DeepSeek-R1-0528-Qwen3-8B đều hỗ trợ thinking mode. Cần test cả 2 chế độ (`enable_thinking=True/False`) để so sánh trade-off giữa chất lượng và latency.
+> - **Thinking mode:** Qwen3.5-9B và DeepSeek-R1-0528-Qwen3-8B đều hỗ trợ thinking mode. Cần test cả 2 chế độ (`enable_thinking=True/False`) để so sánh trade-off giữa chất lượng và latency.
 > - **Context dài:** Qwen3.5-9B (262K) phù hợp nhất cho UC-07, UC-08, UC-12 (xử lý transcript/email dài).
 > - **Multimodal:** Gemma 4-E4B hỗ trợ text + image + audio natively – có thể test thêm UC-13 với input đính kèm.
-> - **Cùng precision khi so sánh:** Trên RTX 4090 24GB, recommend dùng BF16 cho cả 4 model để fair comparison.
+> - **Cùng precision khi so sánh:** Trên RTX 4090 24GB, recommend dùng BF16 cho cả 3 model để fair comparison.
 
 ---
 
@@ -434,9 +433,9 @@
 
 ---
 
-## 5. Thông tin 4 Model trong Shortlist
+## 5. Thông tin 3 Model trong Shortlist
 
-**THÔNG TIN CHI TIẾT – 4 MODEL DƯỚI 10B ĐƯỢC CHỌN ĐỂ TEST**
+**THÔNG TIN CHI TIẾT – 3 MODEL DƯỚI 10B ĐƯỢC CHỌN ĐỂ TEST**
 
 > Thông số kỹ thuật, điểm mạnh, hạn chế và khuyến nghị cho chatbot thư ký tiếng Việt
 
@@ -452,16 +451,6 @@
 
 ---
 
-**Qwen3-8B** · Alibaba | 8B | 04/2025 | Apache 2.0 | Context: 131K | VI: ★★★★★
-
-- **Điểm mạnh:** Thinking/non-thinking mode toggle; 119 ngôn ngữ (tiếng Việt rất tốt – community vote là "best 8B for Vietnamese"); tool calling tốt; baseline đã được kiểm chứng kỹ trong production; ecosystem trưởng thành (>100M downloads trên Ollama).
-- **Hạn chế:** Phiên bản cũ hơn Qwen3.5; context 131K vs 262K; không multimodal (text-only).
-- **Cách chạy:** Ollama (`qwen3:8b`) / vLLM / LM Studio
-- **VRAM ước tính:** Q4_K_M ~4.6GB, BF16 ~16GB
-- **Khuyến nghị:** ✅ **Ứng viên #2** – Baseline kiểm chứng kỹ; backup nếu Qwen3.5-9B có regression nào đó hoặc cần tiết kiệm VRAM hơn.
-
----
-
 **Gemma 4-E4B** · Google | ~4.5B effective (8B total) | 04/2026 | Gemma License (commercial OK) | Context: 128K | VI: ★★★★☆
 
 - **Điểm mạnh:** Hỗ trợ 140+ ngôn ngữ (có tiếng Việt); native multimodal (text + image + audio); kiến trúc Per-Layer Embedding (PLE) hiệu quả; configurable thinking modes; chạy được trên edge device; native function calling; ecosystem khác hệ Qwen → good alternative cho diversification risk.
@@ -474,8 +463,8 @@
 
 **DeepSeek-R1-0528-Qwen3-8B** · DeepSeek | 8B | 05/2025 | MIT | Context: 128K | VI: ★★★★☆
 
-- **Điểm mạnh:** Reasoning mạnh nhất trong shortlist (distill từ DeepSeek-R1-0528 với chain-of-thought đầy đủ); cải tiến lớn so với R1-Distill đời cũ – giảm 45-50% hallucination, thêm function calling, thêm system prompt support; base Qwen3-8B nên thừa hưởng năng lực tiếng Việt; MIT license tự do nhất.
-- **Hạn chế:** Verbose (thinking chain tiêu nhiều token); tool calling **không hoạt động trong thinking mode** (limitation lớn cho UC-18); tiếng Việt không tốt hơn Qwen3-8B base (vì chỉ distill reasoning); latency cao hơn.
+- **Điểm mạnh:** Reasoning mạnh nhất trong shortlist (distill từ DeepSeek-R1-0528 với chain-of-thought đầy đủ); cải tiến lớn so với R1-Distill đời cũ – giảm 45-50% hallucination, thêm function calling, thêm system prompt support; base Qwen3 nên thừa hưởng năng lực tiếng Việt; MIT license tự do nhất.
+- **Hạn chế:** Verbose (thinking chain tiêu nhiều token); tool calling **không hoạt động trong thinking mode** (limitation lớn cho UC-18); tiếng Việt không tốt hơn base model (vì chỉ distill reasoning); latency cao hơn.
 - **Cách chạy:** Ollama (`deepseek-r1:8b`) / vLLM / SGLang / llama.cpp
 - **VRAM ước tính:** Q4_K_M ~4.5-5GB, BF16 ~16GB
 - **Khuyến nghị:** ✅ **Reasoning specialist** – Test riêng cho UC-06 (ưu tiên hóa), UC-12 (phân tích meeting), UC-14 (cảnh báo thông minh). Không nên dùng làm primary model cho toàn bộ chatbot vì hạn chế về tool calling trong thinking mode.
@@ -487,17 +476,16 @@
 | Mục tiêu | Model nên dùng |
 |---|---|
 | 🥇 Primary candidate (test trước) | **Qwen3.5-9B** – Toàn diện nhất, context dài, tool calling tốt nhất nhóm |
-| 🥈 Baseline so sánh / Fallback nhẹ hơn | **Qwen3-8B** – Đã kiểm chứng production, tiết kiệm VRAM hơn |
 | 🔄 Alternative ecosystem (cross-check) | **Gemma 4-E4B** – Khác hệ Qwen, có multimodal native |
 | 🧠 Reasoning specialist (chỉ test UC-06/12/14) | **DeepSeek-R1-0528-Qwen3-8B** – Khi cần phân tích sâu, ưu tiên hóa task phức tạp |
 
 ### Lưu ý Test Setup trên RTX 4090
 
-- **Precision:** Khuyến nghị dùng **BF16 cho cả 4 model** để fair comparison. RTX 4090 24GB VRAM dư sức.
-- **Thinking mode:** Test cả `enable_thinking=true` và `false` cho Qwen3.5-9B, Qwen3-8B, DeepSeek-R1 để hiểu trade-off.
-- **Sampling params:** Cùng `temperature=0.7, top_p=0.95, max_tokens=1024` cho cả 4 model.
-- **Tool calling test:** Đặc biệt chú ý UC-04, UC-18 – Qwen3.5-9B có BFCL 66.1, Qwen3-8B tốt, Gemma 4-E4B có native function calling, DeepSeek-R1 có nhưng không dùng được khi bật thinking.
+- **Precision:** Khuyến nghị dùng **BF16 cho cả 3 model** để fair comparison. RTX 4090 24GB VRAM dư sức.
+- **Thinking mode:** Test cả `enable_thinking=true` và `false` cho Qwen3.5-9B, DeepSeek-R1 để hiểu trade-off.
+- **Sampling params:** Cùng `temperature=0.7, top_p=0.95, max_tokens=1024` cho cả 3 model.
+- **Tool calling test:** Đặc biệt chú ý UC-04, UC-18 – Qwen3.5-9B có BFCL 66.1, Gemma 4-E4B có native function calling, DeepSeek-R1 có nhưng không dùng được khi bật thinking.
 
 ---
 
-*Tài liệu rút gọn từ `Chatbot_ThuKy_UseCases_EvalCriteria_v2.md` | Chỉ giữ 4 model trong shortlist test | Cập nhật: 05/2026*
+*Tài liệu rút gọn từ `Chatbot_ThuKy_UseCases_EvalCriteria_v2.md` | Chỉ giữ 3 model trong shortlist test | Cập nhật: 05/2026*
