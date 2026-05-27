@@ -220,3 +220,7 @@ __marimo__/
 # Eval artifacts (regeneratable từ run_eval_judge.py)
 eval/eval_outputs*.json
 eval/eval_report*.md
+
+# Data nguồn / artifact xlsx (không version)
+Huấn luyện DS- V1.xlsx
+eval/usecase_status_*.xlsx
