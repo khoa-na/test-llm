@@ -61,7 +61,6 @@ Sửa `modal_app.py` line `MODEL_NAME`, deploy lại. Hoặc tạo app khác v�
 | Model | MODEL_NAME | GPU |
 |---|---|---|
 | **Qwen3.5-9B (default)** | `Qwen/Qwen3.5-9B-Instruct` | A10G 24GB |
-| Qwen3-8B | `Qwen/Qwen3-8B` | A10G 24GB |
 | Gemma 4-E4B | `google/gemma-4-e4b-it` | A10G 24GB (cần HF_TOKEN) |
 | DeepSeek-R1-Qwen3-8B | `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B` | A10G 24GB |
 
@@ -73,7 +72,7 @@ Sửa `modal_app.py` line `MODEL_NAME`, deploy lại. Hoặc tạo app khác v�
 - Mỗi request inference: 3-10s → ~$0.001-0.003
 - Idle (scaledown 120s sau request cuối): $0
 
-Test toàn bộ 11 use case × 4 model × 2 thinking mode: **~$1-2**.
+Test toàn bộ 11 use case × 3 model × 2 thinking mode: **~$0.75-1.5**.
 
 ## Workflow dev
 

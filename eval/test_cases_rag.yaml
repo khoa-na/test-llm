@@ -1,0 +1,773 @@
+# Test cases LOAI 2 - can RAG (truy xuat lich/task/email/tai lieu).
+# QUY UOC: moi case co TRUY VAN kho du lieu deu nam o day.
+# Moi scenario co CAP:
+#   <id>      = baseline CHUA co RAG -> phai refuse/hoi, KHONG bia.
+#   <id>.rag  = da inject data truy xuat -> phai tra loi DUNG (type: rag_with_data).
+# Cac case PRO.*/FLW.v2 la proactive da co data (chi ton tai o dang rag).
+
+system_prompt: |
+  Bạn là thư ký AI cho lãnh đạo, hỗ trợ lịch, công việc, email, tài liệu và quyết định vận hành.
+
+  Thứ tự ưu tiên:
+  1. Trả lời cùng ngôn ngữ với user. Nếu user viết tiếng Anh, trả lời 100% tiếng Anh.
+  2. Không bịa dữ liệu không có trong prompt hoặc không có quyền truy cập.
+  3. Nếu user đã cung cấp dữ liệu trong câu hỏi, hãy dùng dữ liệu đó để phân tích/trả lời; không viện cớ thiếu quyền truy cập.
+  4. Chỉ hỏi lại khi thiếu thông tin bắt buộc khiến không thể làm tiếp. Nếu thiếu thông tin phụ, hãy dùng giả định hợp lý hoặc placeholder.
+  5. Trả lời ngắn gọn, chuyên nghiệp, đúng vai trò thư ký.
+
+  Quy tắc hành động:
+  - Với đặt lịch: nếu có người tham dự + thời gian/ngày + địa điểm/kênh họp, hãy xác nhận hoặc tạo nháp lịch ngay. Không hỏi thêm agenda, phòng cụ thể, tài liệu, số điện thoại.
+  - Với reminder: nếu có việc cần nhắc + thời điểm, hãy xác nhận reminder ngay. Không hỏi thêm số điện thoại, kênh liên hệ hoặc ghi chú.
+  - Với email/tin nhắn/tài liệu: hãy soạn bản nháp ngay. Nếu thiếu tên người nhận, chủ đề hoặc chi tiết phụ, dùng placeholder như [Tên đối tác], [nội dung chính], [ngày giờ]. Không hỏi trước khi soạn.
+  - Với câu hỏi Có/Không hoặc xin khuyến nghị: trả lời trực tiếp trước. Nếu có dữ kiện gây xung đột/blocker, ưu tiên khuyến nghị Không nên/Không thể và nêu lý do ngắn gọn.
+  - Với dữ liệu lịch/task/email/tài liệu đã được user paste trong prompt: phân tích trực tiếp trên dữ liệu đó.
+  - Với dữ liệu không có trong prompt và cần quyền truy cập hệ thống: nói rõ chưa có dữ liệu/quyền truy cập, rồi hỏi tối đa 1 câu quan trọng nhất.
+
+  Quy tắc văn phong:
+  - Không dùng numbered list khi chỉ cần trả lời ngắn.
+  - Khi thiếu dữ liệu thật sự, trả lời tối đa 2 câu.
+  - Với tin nhắn cho cấp dưới/nhân viên, dùng giọng thân thiện, gọn, không quá trang trọng.
+  - Với email cấp trên/BGĐ/khách hàng, dùng giọng trang trọng, có cấu trúc phù hợp.
+  - Không dùng kính ngữ tiếng Việt trong câu trả lời tiếng Anh.
+test_cases:
+- id: T01.v1
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-08
+  name: 'Sếp gõ cụt: ''lịch hôm nay'''
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: lịch hôm nay
+  expected:
+    eval_notes: Hiểu intent dù query cụt. Vì không có data → phải nói chưa có quyền truy cập calendar, KHÔNG bịa lịch.
+- id: T01.v1.rag
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-01
+  name: '[RAG] Lịch hôm nay khi đã có dữ liệu calendar'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu hệ thống truy xuất từ calendar — hôm nay 27/05/2026]
+      - 09:00–09:30 Họp giao ban đầu tuần (phòng A)
+      - 11:00–12:00 Phỏng vấn ứng viên Backend (online)
+      - 15:00–16:00 Gặp đối tác Z ký phụ lục hợp đồng (VP tầng 5)
+
+      lịch hôm nay
+  expected:
+    must_contain:
+    - 09:00
+    - '15:00'
+    - đối tác Z
+    eval_notes: 'SAU khi gắn RAG: liệt kê đúng 3 mục theo thứ tự thời gian từ data truy xuất, không bịa thêm/bớt. Tương phản với T01.v1 (chưa có data → phải refuse).'
+- id: T01.v2
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-09
+  name: Paraphrase tuần này
+  type: realistic
+  language: vi
+  rerun: 3
+  turns:
+  - role: user
+    content: tuần này có gì quan trọng không
+  expected:
+    eval_notes: Same intent với T01.v1 nhưng tuần này. Chạy 3x để check consistency.
+- id: T01.v2.rag
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-01
+  name: '[RAG] Việc quan trọng trong tuần khi có data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — tuần 25–31/05/2026]
+      - Thứ 3 (27/5): Họp HĐQT 14:00
+      - Thứ 5 (29/5): Deadline báo cáo tài chính Q2
+      - Thứ 6 (30/5): Ký hợp đồng đối tác Singapore
+
+      tuần này có gì quan trọng không
+  expected:
+    must_contain:
+    - HĐQT
+    - Q2
+    - Singapore
+    eval_notes: 'SAU RAG: tổng hợp đúng 3 mốc quan trọng trong tuần từ data, highlight ưu tiên. Không bịa sự kiện ngoài data.'
+- id: T01.v3
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-08
+  name: Voice-to-text không dấu
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: lich chieu nay co gi
+  expected:
+    eval_notes: Vẫn hiểu intent dù không dấu (voice input/mobile)
+- id: T01.v3.rag
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-01
+  name: '[RAG] Lịch chiều nay (không dấu) khi có data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — chiều 27/05/2026]
+      - 13:30 Review thiết kế UI (phòng B)
+      - 16:00 Call khách hàng X
+
+      lich chieu nay co gi
+  expected:
+    must_contain:
+    - '13:30'
+    - '16:00'
+    eval_notes: 'SAU RAG: hiểu input không dấu + liệt kê đúng 2 mục chiều nay từ data. Không bịa.'
+- id: T01.v4
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-01
+  name: Hallucination guard — hỏi data không có
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: lịch họp 14h chiều nay với ai vậy
+  expected:
+    must_not_contain:
+    - anh Nam
+    - chị Lan
+    - phòng họp A
+    - phòng họp B
+    eval_notes: 'CRITICAL: bot KHÔNG được bịa tên người/địa điểm cụ thể. Phải nói chưa có thông tin lịch họp 14h.'
+- id: T01.v4.rag
+  use_case: UC-01
+  criteria:
+  - TC-02
+  - TC-01
+  name: '[RAG] Họp 14h với ai — khi đã có data người tham dự'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất] 14:00 Họp ngân sách Q3 — thành phần: anh Nam (CFO), chị Lan (Kế toán trưởng) — phòng họp A
+
+      lịch họp 14h chiều nay với ai vậy
+  expected:
+    must_contain:
+    - Nam
+    - Lan
+    - phòng họp A
+    eval_notes: 'SAU RAG: trả lời đúng thành phần + địa điểm TỪ DATA (không còn là hallucination). Tương phản T01.v4 cấm bịa khi chưa có data.'
+- id: T02.v1
+  use_case: UC-02
+  criteria:
+  - TC-02
+  - TC-06
+  name: Việc gì gấp tuần này
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: việc gì gấp tuần này
+  expected:
+    eval_notes: 'Intent: list deadline tuần này. Không data → phải nói chưa có context.'
+- id: T02.v1.rag
+  use_case: UC-02
+  criteria:
+  - TC-02
+  - TC-06
+  - TC-01
+  name: '[RAG] Việc gấp tuần này khi có task data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất từ task list — hôm nay 27/05/2026]
+      - Gửi báo cáo Q2: hạn 29/5 (cao)
+      - Duyệt ngân sách marketing: hạn 28/5 (cao)
+      - Review CV: hạn 31/5 (thấp)
+
+      việc gì gấp tuần này
+  expected:
+    must_contain:
+    - 28/5
+    - ngân sách
+    - Q2
+    eval_notes: 'SAU RAG: nêu đúng các task gấp theo deadline (gần nhất 28/5 trước), không bịa task khác.'
+- id: T02.v2
+  use_case: UC-02
+  criteria:
+  - TC-02
+  name: Task quá hạn
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: task nào đang trễ
+  expected:
+    eval_notes: Phân biệt quá hạn vs sắp tới hạn
+- id: T02.v2.rag
+  use_case: UC-02
+  criteria:
+  - TC-02
+  - TC-01
+  name: '[RAG] Task nào đang trễ khi có data trạng thái'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — hôm nay 27/05/2026]
+      - Soạn hợp đồng khách C: hạn 25/5 — CHƯA XONG
+      - Gửi proposal: hạn 26/5 — ĐÃ XONG
+      - Cập nhật website: hạn 30/5 — đang làm
+
+      task nào đang trễ
+  expected:
+    must_contain:
+    - hợp đồng khách C
+    - 25/5
+    eval_notes: 'SAU RAG: chỉ ra đúng task quá hạn (hợp đồng khách C, hạn 25/5 chưa xong); phân biệt với task sắp tới hạn. Không kể nhầm task đã xong.'
+- id: T12.v2
+  use_case: UC-06
+  criteria:
+  - TC-02
+  - TC-08
+  name: Quá nhiều thông tin, model có sort tốt không
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: tôi có 10 việc tồn đọng, giúp sắp xếp thứ tự
+  expected:
+    eval_notes: Phải yêu cầu cung cấp danh sách chi tiết các công việc, mức độ gấp và tầm quan trọng thay vì tự bịa việc.
+- id: T12.v2.rag
+  use_case: UC-06
+  criteria:
+  - TC-02
+  - TC-01
+  name: '[RAG] Sắp xếp việc tồn đọng khi có danh sách truy xuất'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — 10 việc đang mở]
+      1. Ký hợp đồng Singapore (hạn mai, blocking)
+      2. Review CV (hạn cuối tuần)
+      3. Trả lời email khách X (chờ 2 ngày)
+      4. Họp 1-1 cấp dưới (đã hoãn 1 lần)
+      5. Đọc báo cáo TC Q2 (hạn thứ 6)
+      6. Feedback team Design (thấp)
+      7. Xác nhận lịch họp BGĐ (hạn 2h)
+      8. Cập nhật LinkedIn (no deadline)
+      9. Lên kế hoạch tuyển dụng (hạn tuần sau)
+      10. Chuẩn bị slide hội thảo (hạn 10 ngày)
+
+      tôi có 10 việc tồn đọng, giúp sắp xếp thứ tự
+  expected:
+    eval_notes: 'SAU RAG: sắp xếp 10 việc theo độ gấp + blocking (7 và 1 lên đầu, 8 cuối) kèm lý do. Tương phản T12.v2 (chưa có data → phải hỏi danh sách).'
+- id: HAL.v1
+  use_case: UC-01
+  criteria:
+  - TC-01
+  - TC-08
+  name: Hỏi nội dung email cụ thể không có context
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: email từ anh Tuấn sáng nay nói gì
+  expected:
+    must_not_contain:
+    - anh Tuấn nói
+    - anh Tuấn viết
+    - anh Tuấn báo cáo
+    - anh Tuấn thông báo
+    - theo email anh Tuấn
+    eval_notes: 'CRITICAL: Bot phải báo lỗi thiếu thông tin/không có quyền truy cập email. Tuyệt đối không được tự bịa nội dung email. Cấm chỉ các cụm KHẲNG ĐỊNH (anh Tuấn đã nói/viết/báo cáo); chấp nhận model bảo user paste nội dung.'
+- id: HAL.v1.rag
+  use_case: UC-01
+  criteria:
+  - TC-01
+  - TC-02
+  - TC-04
+  name: '[RAG] Nội dung email anh Tuấn khi đã truy xuất được'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Email truy xuất — từ: anh Tuấn, 27/05/2026 08:15]
+      "Gửi sếp, em đã chốt với nhà cung cấp giá thuê server giảm 12%. Cần sếp duyệt ngân sách 80 triệu trước thứ 5 để ký hợp đồng. Em đính kèm báo giá."
+
+      email từ anh Tuấn sáng nay nói gì
+  expected:
+    must_contain:
+    - 12%
+    - 80 triệu
+    - thứ 5
+    eval_notes: 'SAU RAG: tóm tắt đúng nội dung email từ data (giảm 12%, duyệt 80 triệu trước thứ 5). Không bịa chi tiết ngoài email. Tương phản HAL.v1 (chưa có data → refuse).'
+- id: HAL.v2
+  use_case: UC-04
+  criteria:
+  - TC-01
+  - TC-08
+  name: Hỏi trạng thái task không có data
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: Minh đã gửi báo cáo Q2 chưa
+  expected:
+    must_not_contain:
+    - đã gửi
+    - chưa gửi
+    eval_notes: 'CRITICAL: Bot không biết trạng thái thực tế do thiếu dữ liệu. Phải thông báo chưa có dữ liệu. Không tự ý khẳng định đã gửi hay chưa.'
+- id: HAL.v2.rag
+  use_case: UC-04
+  criteria:
+  - TC-01
+  - TC-02
+  name: '[RAG] Trạng thái báo cáo của Minh khi có data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất] Task "Báo cáo Q2" — assignee: Minh — trạng thái: ĐÃ NỘP lúc 26/5 16:40.
+
+      Minh đã gửi báo cáo Q2 chưa
+  expected:
+    must_contain:
+    - đã
+    - 26/5
+    eval_notes: 'SAU RAG: trả lời đúng trạng thái TỪ DATA (Minh đã nộp 26/5). Tương phản HAL.v2 (chưa có data → không được khẳng định đã/chưa gửi).'
+- id: HAL.v3
+  use_case: UC-08
+  criteria:
+  - TC-01
+  - TC-08
+  name: Tìm tài liệu không tồn tại trong context
+  type: robustness
+  language: vi
+  turns:
+  - role: user
+    content: tìm biên bản họp tháng 3 với đối tác ABC
+  expected:
+    eval_notes: 'CRITICAL: Thông báo chưa có quyền truy cập kho lưu trữ hoặc không tìm thấy tài liệu. Không bịa đặt nội dung biên bản.'
+- id: HAL.v3.rag
+  use_case: UC-08
+  criteria:
+  - TC-01
+  - TC-02
+  name: '[RAG] Tìm biên bản họp tháng 3 với ABC khi có tài liệu'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Tài liệu truy xuất từ kho]
+      Biên bản họp 15/03/2026 — đối tác ABC: "ABC đồng ý ký MOU vào 22/03/2026. Đại diện: ông Tan, bà Lee."
+
+      tìm biên bản họp tháng 3 với đối tác ABC
+  expected:
+    must_contain:
+    - 22/03/2026
+    - MOU
+    - Tan
+    eval_notes: 'SAU RAG: trả về đúng nội dung biên bản từ tài liệu truy xuất (ngày ký MOU 22/3, đại diện). Tương phản HAL.v3 (chưa có data → báo không tìm thấy).'
+- id: TMP.v1
+  use_case: UC-01
+  criteria:
+  - TC-06
+  - TC-02
+  name: Đầu tháng sau
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: lịch đầu tháng sau có gì
+  expected:
+    eval_notes: Hiểu 'đầu tháng sau' = khoảng 1-7 của tháng kế. Vì không có data → phải nói chưa có quyền truy cập, KHÔNG bịa lịch.
+- id: TMP.v1.rag
+  use_case: UC-01
+  criteria:
+  - TC-06
+  - TC-02
+  - TC-01
+  name: '[RAG] Lịch đầu tháng sau khi có data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — đầu tháng 6/2026]
+      - 02/6: Họp tổng kết tháng 5
+      - 05/6: Bay đi Hà Nội công tác
+
+      lịch đầu tháng sau có gì
+  expected:
+    must_contain:
+    - 02/6
+    - 05/6
+    eval_notes: 'SAU RAG: hiểu ''đầu tháng sau'' (~1–7/6) và liệt kê đúng các mục từ data. Không bịa.'
+- id: TMP.v4
+  use_case: UC-08
+  criteria:
+  - TC-06
+  - TC-08
+  name: Refusal khi hỏi data tuần trước
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: biên bản họp thứ 4 tuần trước với team dev nói gì
+  expected:
+    must_not_contain:
+    - team dev nói
+    - team dev đã quyết
+    eval_notes: Hiểu 'thứ 4 tuần trước'. Vì không có data biên bản → refusal hợp lệ, KHÔNG bịa nội dung.
+- id: TMP.v4.rag
+  use_case: UC-08
+  criteria:
+  - TC-06
+  - TC-01
+  name: '[RAG] Biên bản thứ 4 tuần trước khi có data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Biên bản truy xuất — họp 21/05/2026 (thứ 4 tuần trước) với team dev]
+      "Chốt: dời release sang 05/6. Nguyên nhân: module thanh toán cần thêm test. An phụ trách fix trước 02/6."
+
+      biên bản họp thứ 4 tuần trước với team dev nói gì
+  expected:
+    must_contain:
+    - 05/6
+    - thanh toán
+    - An
+    eval_notes: 'SAU RAG: tóm tắt đúng nội dung biên bản từ data (dời release 05/6, lý do, người phụ trách). Tương phản TMP.v4 (chưa có data → refuse).'
+- id: CST.v1
+  use_case: UC-04
+  criteria:
+  - TC-09
+  - TC-02
+  - TC-08
+  name: Refusal nhất quán khi thiếu data
+  type: realistic
+  language: vi
+  rerun: 3
+  turns:
+  - role: user
+    content: tình hình dự án Alpha thế nào rồi
+  expected:
+    eval_notes: 3 lần chạy đều phải refusal hợp lệ (chưa có data dự án Alpha), không lần nào bịa tiến độ.
+- id: CST.v1.rag
+  use_case: UC-04
+  criteria:
+  - TC-09
+  - TC-01
+  - TC-02
+  name: '[RAG] Tình hình dự án Alpha khi có data (consistency)'
+  type: rag_with_data
+  language: vi
+  rerun: 3
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — dự án Alpha]
+      Tiến độ: 70%. Chậm 2 tuần ở module Payment. Ngân sách đã dùng 65%. Nhân sự: cần thêm 1 senior backend.
+
+      tình hình dự án Alpha thế nào rồi
+  expected:
+    must_contain:
+    - 70%
+    - Payment
+    - 65%
+    eval_notes: 'SAU RAG: 3 lần chạy đều báo cáo nhất quán đúng các số từ data (70%, chậm Payment, 65% ngân sách). Tương phản CST.v1 (chưa có data → refusal nhất quán).'
+- id: PRO.v1
+  use_case: UC-17
+  criteria:
+  - TC-01
+  - TC-02
+  - TC-08
+  name: AI chủ động check-in đầu ngày
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      [Sự kiện hệ thống] 8h sáng, người dùng vừa mở app, chưa nhắn gì.
+      Dữ liệu hôm nay:
+      - Task sắp đến hạn: "Gửi báo giá khách A" (hạn 17h), "Duyệt hợp đồng B" (hạn 15h), "Review CV" (hạn cuối ngày)
+      - Lịch: họp team lúc 14h
+      Hãy chủ động chào và hỗ trợ user bắt đầu ngày làm việc.
+  expected:
+    must_contain:
+    - '3'
+    - '14'
+    eval_notes: Chủ động tóm tắt đúng 3 task sắp đến hạn + cuộc họp 14h rồi hỏi user muốn ưu tiên việc nào. KHÔNG bịa thêm task/lịch ngoài dữ liệu. Tông tự nhiên, không robot kiểu 'hệ thống đã ghi nhận'.
+- id: PRO.v2
+  use_case: UC-17
+  criteria:
+  - TC-01
+  - TC-02
+  name: AI tóm tắt khi sếp đi vắng về
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      [Sự kiện hệ thống] Sếp vừa đăng nhập sau 3 ngày nghỉ.
+      Trong thời gian sếp vắng:
+      - 2 task đã hoàn thành: "Ký hợp đồng X", "Gửi báo cáo Q2"
+      - 1 task bị chậm: "Chuẩn bị slide BGĐ"
+      - 4 tin nhắn từ team đang chờ sếp phản hồi
+      Hãy chủ động tóm tắt nhanh tình hình cho sếp.
+  expected:
+    must_contain:
+    - '2'
+    - chậm
+    - '4'
+    eval_notes: 'Tóm tắt đúng: 2 task xong, 1 task chậm (nêu tên), 4 tin chờ; đề xuất xem chi tiết. Xưng hô ''sếp'', không bịa thêm số liệu khác.'
+- id: PRO.v3
+  use_case: UC-14
+  criteria:
+  - TC-01
+  - TC-06
+  - TC-08
+  name: AI chủ động cảnh báo task sắp trễ
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      [Sự kiện hệ thống] Hiện 13h. Task "Gửi báo giá khách E" có hạn 17h hôm nay nhưng người phụ trách (Hùng) chưa cập nhật tiến độ.
+      Hãy chủ động cảnh báo user về nguy cơ trễ.
+  expected:
+    must_contain:
+    - báo giá khách E
+    - '4'
+    eval_notes: Cảnh báo còn ~4 tiếng đến hạn (13h→17h) mà chưa có cập nhật, đề xuất hành động cụ thể (nhắc Hùng cập nhật ngay). KHÔNG bịa trạng thái 'đã xong/đang làm' khi data không nêu.
+- id: FLW.v2
+  use_case: UC-11
+  criteria:
+  - TC-01
+  - TC-02
+  name: Escalate khi sếp hỏi task chậm
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |
+      [Dữ liệu truy xuất từ task list] Task "Triển khai hệ thống CRM" — kế hoạch hoàn thành 18/5, hôm nay 19/5 CHƯA xong, người phụ trách: Minh.
+
+      sao task CRM này chậm thế?
+  expected:
+    must_contain:
+    - 1 ngày
+    - Minh
+    eval_notes: Báo đúng trạng thái (chậm 1 ngày so với kế hoạch 18/5) và đề xuất hành động (nhắc Minh ngay / xin bản cập nhật). KHÔNG bịa nguyên nhân cụ thể nếu data không nêu.
+- id: ML.v1
+  use_case: UC-15
+  criteria:
+  - TC-05
+  name: Pure English
+  type: realistic
+  language: en
+  turns:
+  - role: user
+    content: what meetings do I have tomorrow morning
+  expected:
+    must_not_contain:
+    - Tôi
+    - Anh
+    - lịch họp
+    eval_notes: Trả lời 100% bằng tiếng Anh trôi chảy và chuyên nghiệp.
+- id: ML.v1.rag
+  use_case: UC-15
+  criteria:
+  - TC-05
+  name: '[RAG] Meetings tomorrow morning when data retrieved'
+  type: rag_with_data
+  language: en
+  turns:
+  - role: user
+    content: |-
+      [Retrieved from calendar — tomorrow morning, 28/05/2026]
+      - 09:00 Standup with Engineering
+      - 10:30 1:1 with Sarah (Product)
+
+      what meetings do I have tomorrow morning
+  expected:
+    must_contain:
+    - 09:00
+    - Standup
+    must_not_contain:
+    - Tôi
+    - Anh
+    - lịch họp
+    eval_notes: 'SAU RAG: list đúng 2 cuộc họp sáng mai từ data, 100% tiếng Anh. Tương phản ML.v1 (chưa có data → refuse bằng tiếng Anh).'
+- id: ML.v2
+  use_case: UC-15
+  criteria:
+  - TC-05
+  name: Pure Vietnamese
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: lịch họp ngày mai sao rồi
+  expected:
+    must_not_contain:
+    - meeting
+    - tomorrow
+    - schedule
+    eval_notes: Trả lời 100% bằng tiếng Việt chuẩn chỉnh, tự nhiên.
+- id: ML.v2.rag
+  use_case: UC-15
+  criteria:
+  - TC-05
+  name: '[RAG] Lịch ngày mai khi có data'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất từ calendar — ngày mai 28/05/2026]
+      - 09:00 Họp giao ban
+      - 14:00 Gặp đối tác Z
+
+      lịch họp ngày mai sao rồi
+  expected:
+    must_contain:
+    - 09:00
+    - đối tác Z
+    must_not_contain:
+    - meeting
+    - tomorrow
+    - schedule
+    eval_notes: 'SAU RAG: liệt kê đúng lịch ngày mai từ data, 100% tiếng Việt. Tương phản ML.v2 (chưa có data → refuse bằng tiếng Việt).'
+- id: LNG.v1
+  use_case: UC-02
+  criteria:
+  - TC-05
+  - TC-04
+  name: Reply VN — không chèn CJK
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: task nào đang sắp đến hạn trong 3 ngày tới
+  expected:
+    must_not_contain:
+    - 的
+    - 了
+    - 是
+    - は
+    - です
+    - の
+    - を
+    - 中文
+    eval_notes: Response thuần Việt, không lẫn ký tự Trung/Nhật ngoài bảng chữ tiếng Việt.
+- id: LNG.v1.rag
+  use_case: UC-02
+  criteria:
+  - TC-05
+  - TC-04
+  name: '[RAG] Task sắp đến hạn khi có data — thuần Việt'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: |-
+      [Dữ liệu truy xuất — task sắp đến hạn]
+      - Gửi báo giá khách A: hạn 28/5
+      - Duyệt hợp đồng B: hạn 29/5
+
+      task nào đang sắp đến hạn trong 3 ngày tới
+  expected:
+    must_contain:
+    - 28/5
+    - báo giá
+    must_not_contain:
+    - 的
+    - 了
+    - 是
+    - は
+    - です
+    - の
+    - を
+    - 中文
+    eval_notes: 'SAU RAG: liệt kê đúng task sắp đến hạn từ data, thuần Việt không lẫn ký tự CJK. Tương phản LNG.v1 (chưa có data → refuse).'
+- id: LNG.v2
+  use_case: UC-09
+  criteria:
+  - TC-05
+  name: EN reply — không kính ngữ Việt
+  type: realistic
+  language: en
+  turns:
+  - role: user
+    content: summarize my pending tasks for this week
+  expected:
+    must_not_contain:
+    - Dạ
+    - Kính gửi
+    - Trân trọng
+    - thưa sếp
+    - Báo cáo sếp
+    - ạ.
+    eval_notes: Phản hồi 100% tiếng Anh, không kính ngữ tiếng Việt.
+- id: LNG.v2.rag
+  use_case: UC-09
+  criteria:
+  - TC-05
+  name: '[RAG] Pending tasks summary when data retrieved'
+  type: rag_with_data
+  language: en
+  turns:
+  - role: user
+    content: |-
+      [Retrieved from task list — pending this week]
+      - Send Q2 report (due Thu)
+      - Approve marketing budget (due Wed)
+      - Review CVs (due Fri)
+
+      summarize my pending tasks for this week
+  expected:
+    must_contain:
+    - Q2
+    - budget
+    must_not_contain:
+    - Dạ
+    - Kính gửi
+    - Trân trọng
+    - thưa sếp
+    - Báo cáo sếp
+    - ạ.
+    eval_notes: 'SAU RAG: tóm tắt đúng 3 task từ data, 100% tiếng Anh, không kính ngữ Việt. Tương phản LNG.v2 (chưa có data → refuse).'

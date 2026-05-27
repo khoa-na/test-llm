@@ -29,6 +29,7 @@ from config import (
     TARGET_TEMPERATURE,
     TARGET_MODEL_NAME,
     TEST_CASES_PATH,
+    TEST_SET,
 )
 from judge import judge
 from report import write_report
@@ -363,8 +364,8 @@ def main():
     test_cases = data.get("test_cases", [])
     system_prompt = data.get("system_prompt", "")
 
-    print(f"STAGE: {STAGE.upper()} | Target: {MODE.upper()} | Judge: {JUDGE_MODEL} | "
-          f"Total cases: {len(test_cases)}\n")
+    print(f"SET: {TEST_SET.upper()} | STAGE: {STAGE.upper()} | Target: {MODE.upper()} | "
+          f"Judge: {JUDGE_MODEL} | Total cases: {len(test_cases)}\n")
 
     if STAGE == "generate":
         generate_responses(test_cases, system_prompt)
