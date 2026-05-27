@@ -77,7 +77,7 @@ app = modal.App("test-llm-chatbot-thuky")
     },
     secrets=[modal.Secret.from_name("huggingface")],  # inject HF_TOKEN env var
     enable_memory_snapshot=True,  # CPU snapshot — skip imports nặng ở cold start sau
-    scaledown_window=120,          # idle 120s → tắt → $0
+    scaledown_window=5,            # idle 5s → tắt GPU ngay → $0 (đánh đổi: request sau chịu cold start)
     timeout=600,
     min_containers=0,
 )

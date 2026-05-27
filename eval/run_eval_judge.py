@@ -1,25 +1,44 @@
 """LLM-as-Judge evaluation runner — orchestrator.
 
 Pipeline:
-  1. Đọc test_cases.yaml
+  1. Đọc bộ test theo --set: test_cases_chat.yaml hoặc test_cases_rag.yaml
   2. Gọi Modal model (SDK hoặc HTTP) → lấy response
   3. Gửi (câu hỏi + eval_notes + response) cho Gemini/Qwen làm judge
   4. Judge trả JSON → tổng hợp markdown report
 
+Bộ test (config.TEST_SET, mặc định 'chat'):
+  --set chat   → test_cases_chat.yaml  (case chat thuần, data inline)
+  --set rag    → test_cases_rag.yaml   (case cần truy xuất: baseline refuse + biến thể .rag)
+  Output/report gắn tên set: eval_outputs__<set>__<model>.json, eval_report_judge__<set>__<model>.md
+  → chạy 2 lần (chat và rag) để có đủ 2 báo cáo.
+
 Chạy:
-  python eval/run_eval_judge.py                       # all, mode sdk, judge mặc định
-  python eval/run_eval_judge.py generate              # chỉ stage generate
-  python eval/run_eval_judge.py judge                 # chỉ stage judge (cần outputs.json)
-  python eval/run_eval_judge.py judge sdk gemini-2.5-pro
+  python eval/run_eval_judge.py                       # set chat, all, mode sdk, judge mặc định
+  python eval/run_eval_judge.py --set rag             # set rag, all
+  python eval/run_eval_judge.py generate --set rag    # chỉ stage generate cho set rag
+  python eval/run_eval_judge.py judge                 # chỉ stage judge (cần outputs.json tương ứng)
+  python eval/run_eval_judge.py judge sdk gemini-2.5-pro --set rag
+
+Gen riêng bản CHƯA RAG vs bản CÓ RAG (--variant, trong set rag):
+  python eval/run_eval_judge.py --set rag --variant base   # chỉ baseline (refuse khi thiếu data)
+  python eval/run_eval_judge.py --set rag --variant rag    # chỉ bản có data truy xuất (.rag, PRO.*, FLW.v2)
+  → output tách: eval_outputs__rag__<model>__base.json  vs  ...__rag.json
+
+Test riêng từng case (--id, phân tách bằng dấu phẩy):
+  python eval/run_eval_judge.py --set rag --id T01.v1.rag     # chạy đúng 1 case
+  python eval/run_eval_judge.py --id EMO.v1,EMO.v2            # vài case (set chat mặc định)
+  → ghi ra eval_outputs__<set>__<model>__subset.json + report __subset.md (không đè bản đầy đủ)
 """
 import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import yaml
 
 from config import (
+    CASE_IDS,
     GENERATE_WORKERS,
     JUDGE_MODEL,
     MODE,
@@ -30,6 +49,7 @@ from config import (
     TARGET_MODEL_NAME,
     TEST_CASES_PATH,
     TEST_SET,
+    VARIANT,
 )
 from judge import judge
 from report import write_report
@@ -39,8 +59,28 @@ from target import call_target
 # ───────────────────────────────────────────────
 # Stage 1 — Generate responses
 # ───────────────────────────────────────────────
+_EVAL_DIR = TEST_CASES_PATH.parent
+
+
+def _read_rag_source(src):
+    """rag_source có thể là đường dẫn file (so với eval/) hoặc text nội tuyến."""
+    p = _EVAL_DIR / str(src)
+    if p.exists() and p.is_file():
+        return p.read_text(encoding="utf-8")
+    return str(src)
+
+
 def _build_messages(case, system_prompt):
-    messages = list(case.get("turns", []))
+    messages = [dict(t) for t in case.get("turns", [])]
+    # Nếu case khai báo rag_source (file/text), chèn tài liệu truy xuất vào
+    # đầu turn user đầu tiên để target "đọc" được như ngữ cảnh RAG.
+    src = case.get("rag_source")
+    if src:
+        doc = _read_rag_source(src)
+        for t in messages:
+            if t.get("role") == "user":
+                t["content"] = f"[Tài liệu truy xuất]\n{doc}\n\n{t.get('content', '')}"
+                break
     if system_prompt:
         messages = [{"role": "system", "content": system_prompt}] + messages
     return messages
@@ -363,6 +403,33 @@ def main():
 
     test_cases = data.get("test_cases", [])
     system_prompt = data.get("system_prompt", "")
+
+    # --variant: gen/judge riêng bản chưa RAG (base) hoặc bản có RAG (rag_with_data).
+    if VARIANT != "all":
+        before = len(test_cases)
+        if VARIANT == "rag":
+            test_cases = [c for c in test_cases if c.get("type") == "rag_with_data"]
+        else:  # base
+            test_cases = [c for c in test_cases if c.get("type") != "rag_with_data"]
+        print(f"   [--variant {VARIANT}] Loc {len(test_cases)}/{before} case "
+              f"({'co RAG' if VARIANT == 'rag' else 'chua RAG'}).")
+        if not test_cases:
+            print(f"Khong co case '{VARIANT}' trong set '{TEST_SET}'. Dung.")
+            sys.exit(1)
+
+    # --id: chỉ chạy các case được chỉ định (test riêng từng cái).
+    if CASE_IDS:
+        wanted = set(CASE_IDS)
+        available = {c.get("id") for c in test_cases}
+        test_cases = [c for c in test_cases if c.get("id") in wanted]
+        missing = wanted - available
+        if missing:
+            print(f"⚠️ Khong thay ID trong set '{TEST_SET}': {sorted(missing)} "
+                  f"(co the nam o set khac — thu doi --set).")
+        if not test_cases:
+            print("Khong co case nao khop --id. Dung.")
+            sys.exit(1)
+        print(f"   [--id] Loc {len(test_cases)} case: {[c.get('id') for c in test_cases]}")
 
     print(f"SET: {TEST_SET.upper()} | STAGE: {STAGE.upper()} | Target: {MODE.upper()} | "
           f"Judge: {JUDGE_MODEL} | Total cases: {len(test_cases)}\n")

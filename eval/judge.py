@@ -7,6 +7,7 @@ Public API:
 import json
 import time
 from collections import deque
+from pathlib import Path
 
 from google import genai
 from google.genai import types
@@ -20,7 +21,10 @@ from config import (
     JUDGE_TEMPERATURE,
     PASS_THRESHOLD,
 )
-from criteria import JUDGE_SCHEMA, JUDGE_SYSTEM
+from criteria import JUDGE_SCHEMA, JUDGE_SYSTEM, JUDGE_SYSTEM_RAG
+
+# Nguồn RAG khai báo trong case bằng đường dẫn tương đối so với thư mục eval/.
+_EVAL_DIR = Path(__file__).parent
 
 
 # ───────────────────────────────────────────────
@@ -168,16 +172,73 @@ Hãy chấm theo schema JSON."""
 
 
 # ───────────────────────────────────────────────
+# RAG: resolve nguồn tài liệu truy xuất + build prompt RAG
+# ───────────────────────────────────────────────
+def _resolve_rag_source(case):
+    """Trả về (kind, value):
+      ('file', Path)  nếu `rag_source` trỏ tới file tồn tại → gửi file cho judge.
+      ('text', str)   nếu `rag_source` là chuỗi text (nguồn nội tuyến).
+      (None, None)    nếu không khai báo → nguồn nằm trong khối [Dữ liệu truy xuất] của hội thoại.
+    """
+    src = case.get("rag_source")
+    if not src:
+        return None, None
+    p = _EVAL_DIR / str(src)
+    if p.exists() and p.is_file():
+        return "file", p
+    return "text", str(src)
+
+
+def build_judge_prompt_rag(case, output_text, system_prompt="", source_text=None, has_file=False):
+    """Như build_judge_prompt nhưng thêm khối NGUỒN để judge đối chiếu grounding."""
+    base = build_judge_prompt(case, output_text, system_prompt)
+    if has_file:
+        src_block = (
+            "NGUỒN TÀI LIỆU TRUY XUẤT: đính kèm dưới dạng FILE — hãy ĐỌC TRỰC TIẾP nội dung file "
+            "để đối chiếu mọi dữ kiện trong câu trả lời."
+        )
+    elif source_text:
+        src_block = (
+            "NGUỒN TÀI LIỆU TRUY XUẤT (đối chiếu câu trả lời với nguồn này):\n"
+            f'"""\n{source_text}\n"""'
+        )
+    else:
+        src_block = (
+            "NGUỒN TÀI LIỆU TRUY XUẤT: nằm trong khối [Dữ liệu truy xuất]/[Email truy xuất]/"
+            "[Tài liệu truy xuất]... của HỘI THOẠI bên dưới."
+        )
+    return (
+        f"{src_block}\n\n{base}\n\n"
+        "[Nhắc lại chế độ RAG: chấm GROUNDING — câu trả lời phải bám đúng NGUỒN, "
+        "không khẳng định dữ kiện ngoài nguồn (UNGROUNDED), không bỏ sót dữ kiện nguồn "
+        "mà câu hỏi cần (SOURCE_OMISSION). Số liệu/ngày/tên phải khớp tuyệt đối với nguồn.]"
+    )
+
+
+# ───────────────────────────────────────────────
 # Judge API callers
 # ───────────────────────────────────────────────
-def _call_gemini(prompt: str) -> dict:
+def _call_gemini(prompt: str, system: str = JUDGE_SYSTEM, file_path=None) -> dict:
     if not _gemini_client:
         raise ValueError("Thiếu GEMINI_API_KEY trong .env để chạy Gemini judge.")
+    contents = [prompt]
+    if file_path:
+        try:
+            uploaded = _gemini_client.files.upload(file=str(file_path))
+            contents = [uploaded, prompt]
+        except Exception as e:
+            # Fallback: không upload được thì đọc text nhúng vào prompt.
+            print(f" [RAG upload file lỗi: {e} → fallback đọc text] ", end="", flush=True)
+            try:
+                txt = Path(file_path).read_text(encoding="utf-8")
+                contents = [f'NGUỒN (đọc từ file):\n"""\n{txt}\n"""\n\n{prompt}']
+            except Exception:
+                pass
     resp = _gemini_client.models.generate_content(
         model=JUDGE_MODEL,
-        contents=prompt,
+        contents=contents,
         config=types.GenerateContentConfig(
-            system_instruction=JUDGE_SYSTEM,
+            system_instruction=system,
             temperature=JUDGE_TEMPERATURE,
             response_mime_type="application/json",
             response_schema=JUDGE_SCHEMA,
@@ -186,13 +247,13 @@ def _call_gemini(prompt: str) -> dict:
     return json.loads(resp.text)
 
 
-def _call_dashscope(prompt: str) -> dict:
+def _call_dashscope(prompt: str, system: str = JUDGE_SYSTEM) -> dict:
     if not _dashscope_client:
         raise ValueError("Thiếu DASHSCOPE_API_KEY trong .env để chạy DashScope judge.")
     completion = _dashscope_client.chat.completions.create(
         model=JUDGE_MODEL,
         messages=[
-            {"role": "system", "content": JUDGE_SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
         temperature=JUDGE_TEMPERATURE,
@@ -318,14 +379,40 @@ def _sanitize_verdict(data: dict, case: dict) -> dict:
 # Top-level judge entrypoint
 # ───────────────────────────────────────────────
 def judge(case, output_text, system_prompt="", retries=2):
-    prompt = build_judge_prompt(case, output_text, system_prompt)
     is_qwen = JUDGE_MODEL.startswith("qwen")
+    # Bản RAG: case có data truy xuất (type rag_with_data) hoặc khai báo rag_source.
+    is_rag = case.get("type") == "rag_with_data" or bool(case.get("rag_source"))
+
+    file_path = None
+    if is_rag:
+        kind, src = _resolve_rag_source(case)
+        source_text = src if kind == "text" else None
+        if kind == "file":
+            if is_qwen:
+                # DashScope/Qwen không upload file được → đọc text nhúng vào prompt.
+                try:
+                    source_text = Path(src).read_text(encoding="utf-8")
+                except Exception:
+                    source_text = None
+            else:
+                file_path = src
+        prompt = build_judge_prompt_rag(
+            case, output_text, system_prompt, source_text, has_file=bool(file_path)
+        )
+        judge_system = JUDGE_SYSTEM_RAG
+    else:
+        prompt = build_judge_prompt(case, output_text, system_prompt)
+        judge_system = JUDGE_SYSTEM
+
     last_err = None
 
     for attempt in range(retries + 1):
         try:
             _rate_limit_wait()
-            data = _call_dashscope(prompt) if is_qwen else _call_gemini(prompt)
+            data = (
+                _call_dashscope(prompt, judge_system) if is_qwen
+                else _call_gemini(prompt, judge_system, file_path)
+            )
             data = _apply_must_not_contain_override(data, output_text, case)
             return _sanitize_verdict(data, case)
         except Exception as e:

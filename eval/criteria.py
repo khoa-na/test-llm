@@ -70,6 +70,9 @@ VIOLATION_CODES = [
     "WRONG_LOGIC_CALCULATION",
     "OVER_VERBOSITY",
     "INCORRECT_REFUSAL",
+    # Mã riêng cho chế độ RAG (chỉ judge RAG sinh ra):
+    "UNGROUNDED",       # khẳng định dữ kiện KHÔNG có trong nguồn truy xuất
+    "SOURCE_OMISSION",  # bỏ sót dữ kiện quan trọng CÓ trong nguồn mà câu hỏi cần
     "OTHER",
 ]
 
@@ -141,6 +144,27 @@ Mã vi phạm trong trường `violations` chỉ được phép chọn từ danh
 - `OTHER`: Các lỗi nghiệp vụ khác ngoài danh sách trên.
 
 Trả về JSON đúng schema: `overall` (0-100), `per_tc` (dict TC→{score, note} chỉ cho criteria của case), `reasoning` (tóm tắt 1 câu tiếng Việt), `violations` (list mã)."""
+
+
+# ───────────────────────────────────────────────
+# Judge RAG: chấm faithfulness/grounding với NGUỒN tài liệu truy xuất.
+# Dùng cho case `type: rag_with_data` (hoặc có `rag_source`). Nguồn được gửi
+# kèm prompt dưới dạng text HOẶC file (Gemini Files API).
+# ───────────────────────────────────────────────
+_RAG_EXTRA = """
+
+=== CHẾ ĐỘ RAG — ĐÁNH GIÁ CÓ NGUỒN TÀI LIỆU TRUY XUẤT ===
+Bạn được cung cấp thêm NGUỒN TÀI LIỆU TRUY XUẤT (đính kèm dạng văn bản hoặc FILE). Đây là dữ liệu mà hệ thống RAG đã lấy được và đưa cho chatbot trước khi nó trả lời. Khi chấm, BẮT BUỘC đối chiếu câu trả lời với NGUỒN này theo các quy tắc bổ sung:
+
+- GROUNDING (bám nguồn) — quan trọng nhất: câu trả lời CHỈ được dùng thông tin có trong NGUỒN (hoặc suy luận hợp lệ từ nó). Nếu khẳng định một dữ kiện (số liệu, tên, ngày, trạng thái) KHÔNG có trong nguồn hoặc MÂU THUẪN với nguồn → vi phạm `UNGROUNDED`, TC-01 ≤ 2 và kéo OVERALL về vùng FAIL.
+- COMPLETENESS (đủ ý): phải trích ĐÚNG và ĐỦ các dữ kiện trong nguồn mà câu hỏi cần. Bỏ sót dữ kiện quan trọng có sẵn trong nguồn → vi phạm `SOURCE_OMISSION`, trừ điểm TC-01/TC-02 tương ứng mức độ thiếu.
+- CHÍNH XÁC SỐ LIỆU: mọi con số/ngày/tên trong câu trả lời phải khớp tuyệt đối với nguồn. Sai lệch dù nhỏ (vd. nguồn 22/03 mà trả lời 22/02) → TC-01 thấp.
+- NẾU nguồn KHÔNG chứa thông tin câu hỏi yêu cầu → câu trả lời ĐÚNG là nói rõ "tài liệu không đề cập / không tìm thấy trong nguồn", KHÔNG suy diễn bịa. Bịa khi nguồn thiếu = `UNGROUNDED`.
+- Phần diễn giải/tóm tắt thêm NGOÀI nguồn được chấp nhận nếu KHÔNG mâu thuẫn nguồn và không trình bày như dữ kiện chắc chắn.
+
+Điểm TC-01 (Accuracy) ở chế độ RAG phản ánh CHỦ YẾU độ trung thực với NGUỒN (grounding + đúng số liệu). Trong `note` của TC-01 hãy nêu cụ thể dữ kiện nào đúng/sai/thiếu so với nguồn."""
+
+JUDGE_SYSTEM_RAG = JUDGE_SYSTEM + _RAG_EXTRA
 
 
 _TC_VERDICT_OBJ = {
