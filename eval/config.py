@@ -47,6 +47,17 @@ def _parse_args(argv):
         help="Bộ test: 'chat' (test_cases_chat.yaml) hoặc 'rag' (test_cases_rag.yaml). "
              "Override EVAL_SET (mặc định 'chat').",
     )
+    p.add_argument(
+        "--id", dest="case_ids", default=None,
+        help="Chỉ chạy các case có ID này (phân tách bằng dấu phẩy) — để test riêng từng cái. "
+             "Vd: --id T01.v1.rag  hoặc  --id EMO.v1,EMO.v2. Output ghi ra file *__subset.* riêng.",
+    )
+    p.add_argument(
+        "--variant", dest="variant", default="all", choices=["base", "rag", "all"],
+        help="Lọc trong bộ test theo type: 'base' = bản CHƯA có RAG (refuse baseline), "
+             "'rag' = bản CÓ RAG (type rag_with_data, data đã truy xuất), 'all' = cả hai (mặc định). "
+             "Output tách tên file theo variant để không đè nhau.",
+    )
     # Hỗ trợ cú pháp cũ: thứ tự args có thể là bất kỳ — gom lại rồi reorder.
     # Vd `python run_eval_judge.py judge sdk gemini-2.5-flash` vẫn parse đúng.
     return p.parse_args(argv)
@@ -77,13 +88,34 @@ JUDGE_RPM: int = int(env_config.get("JUDGE_RPM", "15"))
 # Đọc cùng key MODEL_NAME như modal_app.py để đồng bộ.
 TARGET_MODEL_NAME: str = env_config.get("MODEL_NAME", "Qwen/Qwen3.5-9B")
 
+# Lọc theo case ID (chạy riêng 1 vài case). None = chạy cả bộ.
+CASE_IDS: list[str] | None = (
+    [s.strip() for s in _args.case_ids.split(",") if s.strip()]
+    if _args.case_ids else None
+)
+
+# Lọc theo variant: base (chưa RAG) | rag (có RAG) | all.
+VARIANT: str = _args.variant
+
 # Slug an toàn cho filename: "Qwen/Qwen3.5-9B-Instruct" → "Qwen_Qwen3.5-9B-Instruct"
 _MODEL_SLUG = TARGET_MODEL_NAME.replace("/", "_").replace("\\", "_").replace(":", "_")
 
-# File output gắn slug model + bộ test để dễ phân biệt (Qwen vs Llama, chat vs rag).
-TEST_CASES_PATH: Path = Path(__file__).parent / f"test_cases_{TEST_SET}.yaml"
-OUTPUTS_JSON_PATH: Path = Path(__file__).parent / f"eval_outputs__{TEST_SET}__{_MODEL_SLUG}.json"
-REPORT_PATH: Path = Path(__file__).parent / f"eval_report_judge__{TEST_SET}__{_MODEL_SLUG}.md"
+# Suffix output để các lần chạy lọc khác nhau KHÔNG đè kết quả của nhau.
+_SUFFIX = (f"__{VARIANT}" if VARIANT != "all" else "") + ("__subset" if CASE_IDS else "")
+
+_EVAL_DIR = Path(__file__).parent
+
+# Output gom vào folder riêng: results/generate (model gen) + results/judge (judge report).
+RESULTS_DIR: Path = _EVAL_DIR / "results"
+GEN_DIR: Path = RESULTS_DIR / "generate"
+JUDGE_DIR: Path = RESULTS_DIR / "judge"
+GEN_DIR.mkdir(parents=True, exist_ok=True)
+JUDGE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Tên file gắn slug model + bộ test để dễ phân biệt (Qwen vs Llama, chat vs rag).
+TEST_CASES_PATH: Path = _EVAL_DIR / f"test_cases_{TEST_SET}.yaml"
+OUTPUTS_JSON_PATH: Path = GEN_DIR / f"eval_outputs__{TEST_SET}__{_MODEL_SLUG}{_SUFFIX}.json"
+REPORT_PATH: Path = JUDGE_DIR / f"eval_report_judge__{TEST_SET}__{_MODEL_SLUG}{_SUFFIX}.md"
 
 GEMINI_API_KEY: str | None = env_config.get("GEMINI_API_KEY") or env_config.get("GOOGLE_API_KEY")
 DASHSCOPE_API_KEY: str | None = env_config.get("DASHSCOPE_API_KEY")

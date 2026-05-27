@@ -771,3 +771,33 @@ test_cases:
     - Báo cáo sếp
     - ạ.
     eval_notes: 'SAU RAG: tóm tắt đúng 3 task từ data, 100% tiếng Anh, không kính ngữ Việt. Tương phản LNG.v2 (chưa có data → refuse).'
+- id: DOC.v1
+  use_case: UC-08
+  criteria:
+  - TC-01
+  - TC-08
+  name: Hỏi số liệu báo cáo tài chính khi chưa có tài liệu
+  type: realistic
+  language: vi
+  turns:
+  - role: user
+    content: lợi nhuận sau thuế Q1 là bao nhiêu, và số dư tiền cuối kỳ?
+  expected:
+    eval_notes: 'Chưa có báo cáo tài chính trong context → phải nói chưa có dữ liệu / đề nghị cung cấp báo cáo, KHÔNG bịa số liệu.'
+- id: DOC.v1.rag
+  use_case: UC-08
+  criteria:
+  - TC-01
+  - TC-02
+  rag_source: rag_sources/bao_cao_tai_chinh_q1_2026.md
+  name: '[RAG-FILE] Trích số liệu từ file báo cáo tài chính (gửi file cho judge)'
+  type: rag_with_data
+  language: vi
+  turns:
+  - role: user
+    content: lợi nhuận sau thuế Q1 là bao nhiêu, và số dư tiền cuối kỳ?
+  expected:
+    must_contain:
+    - '5.84'
+    - '23.4'
+    eval_notes: 'SAU RAG (nguồn = FILE rag_sources/bao_cao_tai_chinh_q1_2026.md, gửi kèm cho judge): phải trích ĐÚNG lợi nhuận sau thuế 5.84 tỷ và số dư tiền cuối kỳ 23.4 tỷ; KHÔNG nhầm với doanh thu 48.2 tỷ / lợi nhuận trước thuế 7.3 tỷ. Judge đối chiếu trực tiếp với file để chấm grounding.'

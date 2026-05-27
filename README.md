@@ -70,7 +70,7 @@ Sửa `modal_app.py` line `MODEL_NAME`, deploy lại. Hoặc tạo app khác v�
 - Cold start (1 lần đầu): ~30-60s download model → ~$0.02
 - Cold start subsequent (model cached): ~10-20s → ~$0.005
 - Mỗi request inference: 3-10s → ~$0.001-0.003
-- Idle (scaledown 120s sau request cuối): $0
+- Idle (scaledown 5s sau request cuối): $0
 
 Test toàn bộ 11 use case × 3 model × 2 thinking mode: **~$0.75-1.5**.
 
