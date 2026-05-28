@@ -19,6 +19,7 @@ from config import (
     GEMINI_API_KEY,
     JUDGE_MODEL,
     JUDGE_RPM,
+    JUDGE_SEED,
     JUDGE_TEMPERATURE,
     PASS_THRESHOLD,
 )
@@ -255,6 +256,7 @@ def _call_gemini(prompt: str, system: str = JUDGE_SYSTEM, file_path=None) -> dic
         config=types.GenerateContentConfig(
             system_instruction=system,
             temperature=JUDGE_TEMPERATURE,
+            seed=JUDGE_SEED,
             response_mime_type="application/json",
             response_schema=JUDGE_SCHEMA,
         ),
@@ -272,6 +274,7 @@ def _call_dashscope(prompt: str, system: str = JUDGE_SYSTEM) -> dict:
             {"role": "user", "content": prompt},
         ],
         temperature=JUDGE_TEMPERATURE,
+        seed=JUDGE_SEED,
         response_format={"type": "json_object"},
         stream=True,
     )
