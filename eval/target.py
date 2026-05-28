@@ -4,7 +4,7 @@ import warnings
 
 import requests
 
-from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE, TARGET_TEMPERATURE
+from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE, TARGET_TEMPERATURE, USE_TOOLS
 
 warnings.filterwarnings(
     "ignore",
@@ -22,12 +22,15 @@ def _call_sdk(messages, thinking_mode=False):
     import modal
     cls = modal.Cls.from_name("test-llm-chatbot-thuky", "LLMServer")
     t0 = time.time()
-    res = cls().generate.remote(
+    kwargs = dict(
         messages=messages,
         max_tokens=MAX_TOKENS,
         temperature=TARGET_TEMPERATURE,
         thinking_mode=thinking_mode,
     )
+    if USE_TOOLS is not None:
+        kwargs["use_tools"] = USE_TOOLS
+    res = cls().generate.remote(**kwargs)
     return res, time.time() - t0
 
 
@@ -35,16 +38,15 @@ def _call_http(messages, thinking_mode=False):
     if not MODAL_ENDPOINT_URL:
         raise ValueError("Thiếu MODAL_ENDPOINT_URL trong .env khi chạy HTTP")
     t0 = time.time()
-    r = requests.post(
-        MODAL_ENDPOINT_URL,
-        json={
-            "messages": messages,
-            "max_tokens": MAX_TOKENS,
-            "temperature": TARGET_TEMPERATURE,
-            "thinking_mode": thinking_mode,
-        },
-        timeout=600,
-    )
+    body = {
+        "messages": messages,
+        "max_tokens": MAX_TOKENS,
+        "temperature": TARGET_TEMPERATURE,
+        "thinking_mode": thinking_mode,
+    }
+    if USE_TOOLS is not None:
+        body["use_tools"] = USE_TOOLS
+    r = requests.post(MODAL_ENDPOINT_URL, json=body, timeout=600)
     r.raise_for_status()
     return r.json(), time.time() - t0
 
