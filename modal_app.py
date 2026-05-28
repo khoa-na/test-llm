@@ -67,8 +67,14 @@ PYTHON_EXEC_TOOL = {
     },
 }
 
-# Qwen3 emit `<tool_call>\n{json}\n</tool_call>`. DOTALL để \n match.
-TOOL_CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+# Model emit `<tool_call>...</tool_call>` — bên trong có thể là 2 format:
+#   (a) Hermes JSON:  {"name":"python_exec","arguments":{"code":"..."}}
+#   (b) XML-style:    <function=python_exec><parameter=code>...</parameter></function>
+# Qwen3.5-9B thực tế emit (b). Parse cả 2.
+TOOL_CALL_WRAPPER_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+JSON_INNER_RE = re.compile(r"^\s*(\{.*\})\s*$", re.DOTALL)
+XML_FUNCTION_RE = re.compile(r"<function=([^>\s]+)>(.*?)</function>", re.DOTALL)
+XML_PARAM_RE = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.DOTALL)
 MAX_TOOL_ITERS = 4            # bao nhiêu vòng tool tối đa / một generate request
 SANDBOX_EXEC_TIMEOUT = 8       # giây / một lần exec code
 SANDBOX_LIFETIME = 1800        # giây — sandbox tự kill sau idle
@@ -254,16 +260,31 @@ class LLMServer:
 
     @staticmethod
     def _parse_tool_calls(text: str):
-        """Tìm các block `<tool_call>{json}</tool_call>` trong output. Trả (calls, residual_text)."""
+        """Parse `<tool_call>...</tool_call>` blocks. Hỗ trợ 2 format (JSON | XML)."""
         calls = []
-        for m in TOOL_CALL_RE.finditer(text):
-            raw = m.group(1).strip()
-            try:
-                calls.append(json.loads(raw))
-            except json.JSONDecodeError:
-                # JSON hỏng (bị cắt do max_tokens, hoặc model emit kèm rác). Bỏ qua.
+        for m in TOOL_CALL_WRAPPER_RE.finditer(text):
+            inner = m.group(1).strip()
+            # (a) Hermes JSON
+            json_m = JSON_INNER_RE.match(inner)
+            if json_m:
+                try:
+                    calls.append(json.loads(json_m.group(1)))
+                    continue
+                except json.JSONDecodeError:
+                    pass  # rớt xuống thử XML
+            # (b) XML-style: <function=NAME><parameter=KEY>VAL</parameter>...</function>
+            xml_matched = False
+            for fm in XML_FUNCTION_RE.finditer(inner):
+                name = fm.group(1).strip()
+                args: dict = {}
+                for pm in XML_PARAM_RE.finditer(fm.group(2)):
+                    args[pm.group(1).strip()] = pm.group(2).strip()
+                calls.append({"name": name, "arguments": args})
+                xml_matched = True
+            if not xml_matched and not json_m:
+                # Block không parse được — bỏ qua, để log debug bên ngoài nếu cần.
                 pass
-        residual = TOOL_CALL_RE.sub("", text).strip()
+        residual = TOOL_CALL_WRAPPER_RE.sub("", text).strip()
         return calls, residual
 
     # ───────────────────────────────────────────────
@@ -338,21 +359,10 @@ class LLMServer:
                 }
 
             # Có tool call → append assistant message + chạy tools + append tool messages.
-            convo.append({
-                "role": "assistant",
-                "content": residual,
-                "tool_calls": [
-                    {
-                        "id": f"call_{iteration}_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": c.get("name", ""),
-                            "arguments": json.dumps(c.get("arguments", {}), ensure_ascii=False),
-                        },
-                    }
-                    for i, c in enumerate(calls)
-                ],
-            })
+            # Dùng RAW TEXT (out.text) cho assistant content thay vì structured tool_calls:
+            # template render lại sẽ giữ nguyên đúng format model vừa emit (XML hoặc JSON),
+            # tránh mismatch round-trip giữa format model emit và format template render.
+            convo.append({"role": "assistant", "content": out.text})
 
             for i, c in enumerate(calls):
                 name = c.get("name", "")
