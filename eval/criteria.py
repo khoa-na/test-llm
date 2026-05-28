@@ -123,6 +123,7 @@ QUY TẮC CHI TIẾT THEO TỪNG TIÊU CHÍ (BẮT BUỘC TUÂN THỦ — diễn
    - Nếu user viết 100% tiếng Anh (case `language: en`): response BẮT BUỘC 100% tiếng Anh từ đầu đến cuối, KỂ CẢ phần mở đầu/lời chào/ký tên. Bất kỳ cụm tiếng Việt nào (vd. "Kính gửi", "Trân trọng", "Tôi đã ghi nhận") → POOR_LANGUAGE, score ≤ 2.
    - Nếu user viết tiếng Việt: response 100% tiếng Việt, không chèn từ tiếng Anh trừ thuật ngữ kỹ thuật (KPI, deadline, email...).
    - Code-switch (case `language: mixed`): ưu tiên trả lời bằng tiếng Việt lịch sự.
+   - LUỒNG RECOVERY 2 LƯỢT (case `language: en`): nếu HỘI THOẠI có một lượt user PHÍA SAU yêu cầu rõ trả lời bằng tiếng Anh (vd "Please write everything in English"), hãy chấm TC-05 trên ĐÁP ÁN CUỐI CÙNG của model (đáp án cho lượt yêu cầu đó). Nếu đáp án cuối 100% tiếng Anh → TC-05 ĐẠT (điểm cao) DÙ một bản nháp trước đó lỡ viết tiếng Việt — vì người dùng đã recover thành công bằng 1 câu nhắc. CHỈ FAIL TC-05 khi đáp án CUỐI vẫn còn lẫn tiếng Việt.
 
 4. TC-08 / REFUSAL & ROBUSTNESS:
    - Khi user hỏi DỮ LIỆU SỰ THẬT mà context KHÔNG cung cấp (vd. "email từ X nói gì", "task Y đang ở trạng thái nào", "lịch họp 14h với ai") → bot trả lời "chưa có quyền truy cập / chưa có dữ liệu" + xin sếp cung cấp = PASS hoàn toàn (4-5 điểm). KHÔNG được trừ điểm vì "thiếu thông tin trong câu trả lời" — đó chính là hành vi đúng.
