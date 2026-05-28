@@ -5,6 +5,7 @@ Public API:
     {passed, overall, per_tc, reasoning, violations, judge_thinking}
 """
 import json
+import re
 import time
 from collections import deque
 from pathlib import Path
@@ -99,28 +100,42 @@ REFUSAL_MARKERS = [
 ]
 
 
+def _phrase_regex(phrase_lower: str) -> "re.Pattern":
+    """Khớp `phrase` theo RANH GIỚI TỪ để tránh false-match substring.
+
+    Vd cụm cấm "dạ" KHÔNG được khớp bên trong "dạng". Chỉ đặt ranh giới ở
+    phía nào của cụm là ký tự chữ/số (\\w bao gồm cả chữ tiếng Việt Unicode);
+    phía là dấu câu (vd cụm "ạ.") thì không cần ranh giới.
+    """
+    esc = re.escape(phrase_lower)
+    left = r"(?<!\w)" if phrase_lower[:1].isalnum() else ""
+    right = r"(?!\w)" if phrase_lower[-1:].isalnum() else ""
+    return re.compile(left + esc + right)
+
+
 def _has_unsafe_assertion(text: str, phrase: str, strict: bool = False, window: int = 80) -> bool:
     """Trả True nếu `phrase` xuất hiện như một khẳng định (dấu hiệu hallucination).
 
     - strict=True (case `language: en`): bất kỳ occurrence nào cũng tính.
     - strict=False: chỉ tính occurrence KHÔNG nằm trong window ~80 ký tự cạnh
       một refusal marker.
+    Khớp theo ranh giới từ (xem `_phrase_regex`) nên cụm ngắn không bị match
+    nhầm bên trong một từ dài hơn.
     """
-    text_lower = text.lower()
     phrase_lower = phrase.lower()
-    start = 0
-    while True:
-        idx = text_lower.find(phrase_lower, start)
-        if idx < 0:
-            return False
+    if not phrase_lower:
+        return False
+    text_lower = text.lower()
+    pattern = _phrase_regex(phrase_lower)
+    for m in pattern.finditer(text_lower):
         if strict:
             return True
-        ctx_start = max(0, idx - window)
-        ctx_end = min(len(text_lower), idx + len(phrase_lower) + window)
+        ctx_start = max(0, m.start() - window)
+        ctx_end = min(len(text_lower), m.end() + window)
         context = text_lower[ctx_start:ctx_end]
-        if not any(m in context for m in REFUSAL_MARKERS):
+        if not any(mk in context for mk in REFUSAL_MARKERS):
             return True
-        start = idx + len(phrase_lower)
+    return False
 
 
 # ───────────────────────────────────────────────

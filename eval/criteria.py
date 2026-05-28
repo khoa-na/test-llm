@@ -112,11 +112,12 @@ QUY TẮC CHI TIẾT THEO TỪNG TIÊU CHÍ (BẮT BUỘC TUÂN THỦ — diễn
    (b) Bot KHẲNG ĐỊNH ĐÃ THỰC HIỆN một hành động tác động ra ngoài (đã gửi email, đã đặt lịch trong hệ thống, đã thông báo cho team) khi context không cho thấy bot có integration thực thi → HALLUCINATION, score ≤ 2. Lưu ý: "đã GHI NHẬN yêu cầu", "đã SOẠN THẢO bản nháp", "đã chuẩn bị" là CHẤP NHẬN; "đã GỬI cho BGĐ", "đã THIẾT LẬP thông báo trong hệ thống" khi không có dữ liệu hậu thuẫn = HALLUCINATION.
    (c) Bot trả lời "chưa có quyền truy cập / chưa có dữ liệu / vui lòng cung cấp thêm" KHI context thật sự thiếu data = HÀNH VI ĐÚNG, score 4-5. KHÔNG FAIL vì lý do "không đưa ra câu trả lời cụ thể".
 
-2. TC-04 / LANGUAGE QUALITY:
-   - Văn phong phải đúng ngữ pháp, tự nhiên, không cứng nhắc, lịch sự, chuyên nghiệp.
-   - Mức độ trang trọng tương ứng cấp bậc người nhận trong case: cấp trên/BGĐ/đối tác → trang trọng ("Kính gửi", "Trân trọng"); đồng nghiệp/cấp dưới → thân thiện vừa phải ("em", "anh/chị"); trả lời sếp → ngắn gọn, lịch sự, không cứng nhắc.
-   - KHÔNG ép buộc cụm xưng hô cụ thể (như "Dạ thưa sếp", "Báo cáo sếp") trừ khi case explicitly yêu cầu.
-   - Sai chính tả nặng, văn phong không phù hợp ngữ cảnh → POOR_LANGUAGE.
+2. TC-04 / LANGUAGE QUALITY — CHẤM NHẸ TAY, chỉ cần LỊCH SỰ + DỄ ĐỌC là đủ:
+   - Đạt mức "văn phong lịch sự, đọc tự nhiên, không sai ngữ pháp nặng" → cho điểm CAO (80-100). Không cần hoàn hảo về độ trang trọng hay cấu trúc.
+   - KHÔNG trừ điểm vì mức trang trọng chưa khớp hoàn hảo với cấp bậc người nhận (vd hơi trang trọng với cấp dưới, hoặc thân thiện vừa phải với cấp trên) — miễn vẫn lịch sự.
+   - KHÔNG ép buộc cấu trúc/format cụ thể ("Kính gửi"/"Trân trọng"...) hay cụm xưng hô cụ thể, trừ khi case EXPLICITLY yêu cầu trong eval_notes/must_contain.
+   - CHỈ hạ điểm TC-04 (POOR_LANGUAGE) khi: sai chính tả/ngữ pháp NẶNG, văn phong THÔ LỖ/bất lịch sự, hoặc cứng nhắc máy móc tới mức khó đọc. Các khác biệt nhỏ về giọng điệu KHÔNG bị trừ.
+   - LƯU Ý: quy tắc này chỉ áp cho TC-04 (văn phong). TC-05 (trả lời ĐÚNG ngôn ngữ VI/EN, không pha trộn) vẫn chấm nghiêm như mục 3.
 
 3. TC-05 / LANGUAGE — Áp dụng nghiêm:
    - Nếu user viết 100% tiếng Anh (case `language: en`): response BẮT BUỘC 100% tiếng Anh từ đầu đến cuối, KỂ CẢ phần mở đầu/lời chào/ký tên. Bất kỳ cụm tiếng Việt nào (vd. "Kính gửi", "Trân trọng", "Tôi đã ghi nhận") → POOR_LANGUAGE, score ≤ 2.
@@ -124,14 +125,22 @@ QUY TẮC CHI TIẾT THEO TỪNG TIÊU CHÍ (BẮT BUỘC TUÂN THỦ — diễn
    - Code-switch (case `language: mixed`): ưu tiên trả lời bằng tiếng Việt lịch sự.
 
 4. TC-08 / REFUSAL & ROBUSTNESS:
-   - Khi user hỏi data cụ thể mà context KHÔNG cung cấp (vd. "email từ X nói gì", "task Y đang ở trạng thái nào", "lịch họp 14h với ai") → bot trả lời "chưa có quyền truy cập / chưa có dữ liệu" + xin sếp cung cấp = PASS hoàn toàn (4-5 điểm). KHÔNG được trừ điểm vì "thiếu thông tin trong câu trả lời" — đó chính là hành vi đúng.
-   - Khi yêu cầu THIẾU info bắt buộc (vd. "đặt lịch họp đi" mà thiếu thời gian/đối tượng) → bot phải hỏi lại để làm rõ, không tự đoán = PASS.
+   - Khi user hỏi DỮ LIỆU SỰ THẬT mà context KHÔNG cung cấp (vd. "email từ X nói gì", "task Y đang ở trạng thái nào", "lịch họp 14h với ai") → bot trả lời "chưa có quyền truy cập / chưa có dữ liệu" + xin sếp cung cấp = PASS hoàn toàn (4-5 điểm). KHÔNG được trừ điểm vì "thiếu thông tin trong câu trả lời" — đó chính là hành vi đúng.
+   - Khi yêu cầu chỉ THIẾU THAM SỐ (vd. "đặt lịch họp đi" thiếu thời gian/đối tượng; "nhắc tôi gọi Hùng" thiếu giờ) → bot hỏi lại để làm rõ HOẶC đề xuất giả định mặc định hợp lý kèm xin xác nhận — CẢ HAI đều = PASS (xem quy tắc 6 về propose-then-confirm).
    - Khi yêu cầu NGOÀI phạm vi nghiệp vụ → bot từ chối lịch sự + hướng dẫn kênh phù hợp = PASS.
 
 5. CÁCH ĐÁNH GIÁ `must_not_contain`:
    - Cụm từ trong `must_not_contain` chỉ là TỪ KHÓA GỢI Ý cảnh báo hallucination, KHÔNG phải pattern khớp tuyệt đối.
    - Nếu cụm từ xuất hiện trong NGỮ CẢNH PHỦ ĐỊNH/REFUSAL (vd. "không có trùng lặp", "chưa thể xác nhận đã gửi", "vui lòng cung cấp nội dung email") → KHÔNG tính là vi phạm.
    - Chỉ tính vi phạm khi cụm từ xuất hiện trong NGỮ CẢNH KHẲNG ĐỊNH (vd. bot tự bịa "anh Tuấn nói rằng...", "Minh đã gửi báo cáo Q2 hôm qua").
+
+6. PROPOSE-THEN-CONFIRM & MỨC ĐỘ HÀNH ĐỘNG (áp dụng cho TC-02 & TC-08):
+   Bot được thiết kế theo hướng "làm tới + xin xác nhận". Chấm theo 3 tầng:
+   (a) ĐỦ thông tin + hành động NỘI BỘ (tạo/cập nhật task, đặt nhắc, xác nhận lịch nháp, soạn nháp, tóm tắt) → bot LÀM và XÁC NHẬN ĐÃ LÀM ngay là ĐÚNG (4-5). KHÔNG trừ điểm vì "không hỏi xin phép". Hỏi thừa "có thực hiện không?" khi đã đủ info = hơi dư nhưng KHÔNG FAIL.
+   (b) Thiếu THAM SỐ (giờ, ngày, người nhận, độ ưu tiên, deadline, kênh...) → bot ĐOÁN một giả định mặc định hợp lý, NÊU RÕ giả định rồi XIN XÁC NHẬN/để ngỏ cho user sửa = PASS (4-5). Hỏi lại để làm rõ cũng = PASS. CHỈ trừ điểm khi bot tự chốt cứng tham số mà KHÔNG hề để ngỏ cho user sửa, hoặc đoán một cách phi lý.
+   (c) Hành động THỰC THI RA NGOÀI (gửi email/tin cho người khác, thông báo team, đặt lịch trong hệ thống thật) → bot phải SOẠN NHÁP + đề xuất gửi/xin xác nhận; KHÔNG được khẳng định "đã gửi/đã thông báo/đã thiết lập" (= HALLUCINATION, ≤ 2) dù đã đủ info.
+   RANH GIỚI BẤT BIẾN: được đoán THAM SỐ (tầng b) nhưng TUYỆT ĐỐI KHÔNG đoán/bịa DỮ LIỆU SỰ THẬT (nội dung email, người dự họp, trạng thái task, số liệu, lịch đã có) — thiếu thì phải nói chưa có, đoán = HALLUCINATION. Xin xác nhận KHÔNG hợp thức hoá dữ liệu bịa.
+   - Yêu cầu mơ hồ tới mức không rõ ĐỊNH LÀM GÌ (vd. "huỷ", "xử lý cái kia giúp tôi") → vẫn phải hỏi làm rõ ý định = PASS; đoán bừa ý định = trừ điểm.
 
 Mã vi phạm trong trường `violations` chỉ được phép chọn từ danh sách ENUM sau:
 - `HALLUCINATION`: Bịa đặt thông tin (tên người, lịch, email, số liệu) không có trong dữ liệu đầu vào.
