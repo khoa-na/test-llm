@@ -61,6 +61,12 @@ from target import call_target
 # ───────────────────────────────────────────────
 _EVAL_DIR = TEST_CASES_PATH.parent
 
+# Case `language: en`: model đôi khi drift sang tiếng Việt ở lượt đầu (prior tiếng
+# Việt của system prompt áp đảo). Theo thiết kế, ta đánh giá ngôn ngữ theo LUỒNG
+# 2 LƯỢT: sinh đáp án lượt 1 → tự chèn turn user yêu cầu viết lại bằng tiếng Anh →
+# sinh đáp án lượt 2. Judge chấm TC-05 trên đáp án CUỐI: recover đúng tiếng Anh = PASS.
+EN_RECOVERY_PROMPT = "Please write everything in English."
+
 
 def _read_rag_source(src):
     """rag_source có thể là đường dẫn file (so với eval/) hoặc text nội tuyến."""
@@ -87,16 +93,55 @@ def _build_messages(case, system_prompt):
 
 
 def _run_one(case, system_prompt):
-    """Gọi target 1 lần, trả về dict các metric."""
+    """Gọi target, trả về dict các metric.
+
+    Case `language: en`: sinh thêm 1 lượt 'recovery' (chèn turn user
+    EN_RECOVERY_PROMPT) và lấy đáp án lượt 2 làm `output` cần judge. Đáp án lượt 1
+    lưu ở `turn1_output` để report/judge thấy được nguyên luồng. Latency/tokens cộng
+    dồn cả 2 lượt.
+    """
     messages = _build_messages(case, system_prompt)
     thinking_mode = case.get("thinking_mode", False) or case.get("thinking_compare", False)
     res, latency = call_target(messages, thinking_mode)
-    return {
+    result = {
         "output": res.get("text", ""),
         "latency": latency,
         "prompt_tokens": res.get("prompt_tokens", 0),
         "completion_tokens": res.get("completion_tokens", 0),
     }
+
+    if case.get("language") == "en":
+        convo2 = messages + [
+            {"role": "assistant", "content": res.get("text", "")},
+            {"role": "user", "content": EN_RECOVERY_PROMPT},
+        ]
+        res2, latency2 = call_target(convo2, thinking_mode)
+        result["turn1_output"] = res.get("text", "")
+        result["recovery_prompt"] = EN_RECOVERY_PROMPT
+        result["output"] = res2.get("text", "")
+        result["latency"] = latency + latency2
+        result["prompt_tokens"] = res.get("prompt_tokens", 0) + res2.get("prompt_tokens", 0)
+        result["completion_tokens"] = res.get("completion_tokens", 0) + res2.get("completion_tokens", 0)
+
+    return result
+
+
+def _augment_case_for_recovery(case, case_output):
+    """Trả case có `turns` mở rộng để judge thấy nguyên luồng 2 lượt EN recovery.
+
+    Chèn vào sau turns gốc: đáp án lượt 1 (assistant) + turn user yêu cầu tiếng Anh.
+    `output` cần judge vẫn là đáp án lượt 2 (đã nằm trong case_output['output']).
+    Case không phải EN recovery → trả nguyên case.
+    """
+    t1 = case_output.get("turn1_output")
+    if case.get("language") != "en" or t1 is None:
+        return case
+    c = dict(case)
+    c["turns"] = list(case.get("turns", [])) + [
+        {"role": "assistant", "content": t1},
+        {"role": "user", "content": case_output.get("recovery_prompt", EN_RECOVERY_PROMPT)},
+    ]
+    return c
 
 
 def _error_run(error):
@@ -354,9 +399,12 @@ def run_judge_stage(test_cases, system_prompt):
         if "runs" in case_output:
             verdict, latency, p_tokens, c_tokens, output_text, judge_err = \
                 _judge_multi_run(case, case_output, system_prompt)
+            judge_case = case
         else:
+            # EN recovery: judge thấy nguyên luồng 2 lượt (turns mở rộng).
+            judge_case = _augment_case_for_recovery(case, case_output)
             verdict, latency, p_tokens, c_tokens, output_text, judge_err = \
-                _judge_single_run(case, case_output, system_prompt)
+                _judge_single_run(judge_case, case_output, system_prompt)
 
         r = {
             "id": cid,
@@ -373,7 +421,7 @@ def run_judge_stage(test_cases, system_prompt):
             "prompt_tokens": p_tokens,
             "completion_tokens": c_tokens,
             "output": output_text,
-            "turns": case.get("turns", []),
+            "turns": judge_case.get("turns", []),
             "eval_notes": (case.get("expected", {}) or {}).get("eval_notes", ""),
         }
         results.append(r)
