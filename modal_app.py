@@ -10,7 +10,9 @@ Test 1 lần (chạy local entrypoint):
 Gọi từ client khác:
     Xem `modal_client.py`
 """
+import json
 import os
+import re
 from pathlib import Path
 from dotenv import dotenv_values, load_dotenv
 import modal
@@ -34,7 +36,51 @@ MAX_NUM_SEQS = int(env_config.get("MAX_NUM_SEQS", "4"))                # batch n
 GPU_TYPE = env_config.get("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
 
 # ───────────────────────────────────────────────
-# Container image (Modal tự build trên cloud)
+# Tool-calling config
+# ───────────────────────────────────────────────
+# Bật python_exec tool cho mọi generate có messages. Model tự quyết định khi nào gọi
+# (qua Qwen3 chat-template tools=[...]). Set USE_TOOLS=false để tắt và quay về behaviour cũ.
+USE_TOOLS_DEFAULT = env_config.get("USE_TOOLS", "true").lower() == "true"
+
+# Tool schema (Qwen3 hermes-compatible: tokenizer chèn vào system prompt, model emit
+# <tool_call>{"name":...,"arguments":{...}}</tool_call>).
+PYTHON_EXEC_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "python_exec",
+        "description": (
+            "Chạy Python code trong môi trường isolated để tính toán deterministic. "
+            "DÙNG cho mọi phép tính số học, ngày tháng, đếm/thống kê — không tự nhẩm. "
+            "Code BẮT BUỘC print() kết quả ra stdout. "
+            "Stdlib có sẵn: datetime, math, calendar, statistics, collections, re."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Python code; in kết quả bằng print().",
+                }
+            },
+            "required": ["code"],
+        },
+    },
+}
+
+# Model emit `<tool_call>...</tool_call>` — bên trong có thể là 2 format:
+#   (a) Hermes JSON:  {"name":"python_exec","arguments":{"code":"..."}}
+#   (b) XML-style:    <function=python_exec><parameter=code>...</parameter></function>
+# Qwen3.5-9B thực tế emit (b). Parse cả 2.
+TOOL_CALL_WRAPPER_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+JSON_INNER_RE = re.compile(r"^\s*(\{.*\})\s*$", re.DOTALL)
+XML_FUNCTION_RE = re.compile(r"<function=([^>\s]+)>(.*?)</function>", re.DOTALL)
+XML_PARAM_RE = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.DOTALL)
+MAX_TOOL_ITERS = 4            # bao nhiêu vòng tool tối đa / một generate request
+SANDBOX_EXEC_TIMEOUT = 8       # giây / một lần exec code
+SANDBOX_LIFETIME = 1800        # giây — sandbox tự kill sau idle
+
+# ───────────────────────────────────────────────
+# Container image cho LLM server (vLLM)
 # ───────────────────────────────────────────────
 image = (
     modal.Image.from_registry(
@@ -54,6 +100,16 @@ image = (
         # V1 engine là default từ vLLM 0.20+, không cần set
         "VLLM_NO_USAGE_STATS": "1",
     })
+)
+
+# ───────────────────────────────────────────────
+# Sandbox image — môi trường isolated để chạy python_exec.
+# Chỉ stdlib + python-dateutil (đủ cho mọi tính toán ngày/giờ thường gặp).
+# Không có network (block_network=True ở Sandbox.create), không có gì ngoài Python.
+# ───────────────────────────────────────────────
+sandbox_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install("python-dateutil")
 )
 
 # Volumes cache:
@@ -119,8 +175,121 @@ class LLMServer:
             limit_mm_per_prompt={"image": 0, "video": 0},
         )
         self.tokenizer = self.llm.get_tokenizer()
+        self._sandbox = None  # lazy-init khi có tool call đầu tiên
         print("[modal] Model ready.", flush=True)
 
+    @modal.exit()
+    def cleanup(self):
+        """Terminate sandbox khi container scale xuống — Modal Sandbox không tự cleanup theo parent."""
+        sb = getattr(self, "_sandbox", None)
+        if sb is not None:
+            try:
+                sb.terminate()
+                print("[modal] [sandbox] terminated", flush=True)
+            except Exception as e:
+                print(f"[modal] [sandbox] cleanup error: {e}", flush=True)
+
+    # ───────────────────────────────────────────────
+    # Sandbox helpers
+    # ───────────────────────────────────────────────
+    def _get_sandbox(self):
+        """Lazy-init một sandbox dài hơi (sleep infinity); reuse cho mọi exec trong instance."""
+        sb = getattr(self, "_sandbox", None)
+        if sb is not None:
+            # Re-create nếu sandbox đã chết (timeout, hoặc Modal kill).
+            try:
+                # poll: nếu sandbox còn sống thì returncode is None
+                if sb.returncode is None:
+                    return sb
+            except Exception:
+                pass
+            sb = None
+        from modal import Sandbox
+        sb = Sandbox.create(
+            "sleep", "infinity",          # keep-alive, ta exec ad-hoc qua sb.exec()
+            image=sandbox_image,
+            app=app,
+            timeout=SANDBOX_LIFETIME,
+            block_network=True,            # KHÔNG cho code gọi internet
+        )
+        self._sandbox = sb
+        print("[modal] [sandbox] created", flush=True)
+        return sb
+
+    def _exec_in_sandbox(self, code: str) -> str:
+        """Chạy code trong sandbox. Trả về stdout (kèm stderr nếu có)."""
+        try:
+            sb = self._get_sandbox()
+            p = sb.exec("python3", "-c", code, timeout=SANDBOX_EXEC_TIMEOUT)
+            stdout = p.stdout.read() or ""
+            stderr = p.stderr.read() or ""
+            # đảm bảo process kết thúc
+            try:
+                p.wait()
+            except Exception:
+                pass
+        except Exception as e:
+            return f"[sandbox_error] {e}"
+        out = stdout.rstrip()
+        if stderr.strip():
+            out = (out + "\n[stderr]\n" + stderr.rstrip()).strip()
+        return out or "(no output)"
+
+    # ───────────────────────────────────────────────
+    # Chat-template & tool-call parsing
+    # ───────────────────────────────────────────────
+    def _render(self, messages, tools, thinking_mode):
+        # Thử full (tools + enable_thinking) → bỏ enable_thinking → bỏ luôn tools.
+        attempts = [
+            dict(tools=tools, enable_thinking=thinking_mode),
+            dict(tools=tools),
+            dict(enable_thinking=thinking_mode),
+            dict(),
+        ]
+        last_err = None
+        for kw in attempts:
+            try:
+                return self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True, **kw,
+                )
+            except TypeError as e:
+                last_err = e
+                continue
+        # Không attempt nào pass — re-raise lỗi gốc để debug.
+        raise last_err  # noqa: TRY200
+
+    @staticmethod
+    def _parse_tool_calls(text: str):
+        """Parse `<tool_call>...</tool_call>` blocks. Hỗ trợ 2 format (JSON | XML)."""
+        calls = []
+        for m in TOOL_CALL_WRAPPER_RE.finditer(text):
+            inner = m.group(1).strip()
+            # (a) Hermes JSON
+            json_m = JSON_INNER_RE.match(inner)
+            if json_m:
+                try:
+                    calls.append(json.loads(json_m.group(1)))
+                    continue
+                except json.JSONDecodeError:
+                    pass  # rớt xuống thử XML
+            # (b) XML-style: <function=NAME><parameter=KEY>VAL</parameter>...</function>
+            xml_matched = False
+            for fm in XML_FUNCTION_RE.finditer(inner):
+                name = fm.group(1).strip()
+                args: dict = {}
+                for pm in XML_PARAM_RE.finditer(fm.group(2)):
+                    args[pm.group(1).strip()] = pm.group(2).strip()
+                calls.append({"name": name, "arguments": args})
+                xml_matched = True
+            if not xml_matched and not json_m:
+                # Block không parse được — bỏ qua, để log debug bên ngoài nếu cần.
+                pass
+        residual = TOOL_CALL_WRAPPER_RE.sub("", text).strip()
+        return calls, residual
+
+    # ───────────────────────────────────────────────
+    # Public method
+    # ───────────────────────────────────────────────
     @modal.method()
     def generate(
         self,
@@ -130,39 +299,100 @@ class LLMServer:
         top_p: float = 0.95,
         max_tokens: int = 1024,
         thinking_mode: bool = False,
+        use_tools: bool | None = None,
     ) -> dict:
         from vllm import SamplingParams
 
-        if messages:
-            try:
-                text = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=thinking_mode,
-                )
-            except TypeError:
-                text = self.tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-        elif prompt:
-            text = prompt
-        else:
+        # ───── Path cũ: raw prompt (không messages) ─────
+        if prompt and not messages:
+            params = SamplingParams(temperature=temperature, top_p=top_p, max_tokens=max_tokens)
+            outputs = self.llm.generate([prompt], params)
+            out = outputs[0].outputs[0]
+            return {
+                "text": out.text,
+                "prompt_tokens": len(outputs[0].prompt_token_ids),
+                "completion_tokens": len(out.token_ids),
+                "finish_reason": out.finish_reason,
+            }
+
+        if not messages:
             return {"error": "Thiếu 'messages' hoặc 'prompt'."}
 
-        params = SamplingParams(
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-        )
-        outputs = self.llm.generate([text], params)
-        out = outputs[0].outputs[0]
-        return {
-            "text": out.text,
-            "prompt_tokens": len(outputs[0].prompt_token_ids),
-            "completion_tokens": len(out.token_ids),
-            "finish_reason": out.finish_reason,
-        }
+        # ───── Path mới: messages + agentic tool loop ─────
+        enable_tools = USE_TOOLS_DEFAULT if use_tools is None else bool(use_tools)
+        tools = [PYTHON_EXEC_TOOL] if enable_tools else None
+
+        params = SamplingParams(temperature=temperature, top_p=top_p, max_tokens=max_tokens)
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        tool_log: list[dict] = []
+        convo = list(messages)
+        finish_reason = ""
+
+        for iteration in range(MAX_TOOL_ITERS + 1):
+            text = self._render(convo, tools, thinking_mode)
+            outputs = self.llm.generate([text], params)
+            out = outputs[0].outputs[0]
+            total_prompt_tokens += len(outputs[0].prompt_token_ids)
+            total_completion_tokens += len(out.token_ids)
+            finish_reason = out.finish_reason or finish_reason
+
+            # Không bật tool → 1 vòng, trả luôn.
+            if not tools:
+                return {
+                    "text": out.text,
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                    "finish_reason": finish_reason,
+                }
+
+            calls, residual = self._parse_tool_calls(out.text)
+            # Hết tool call (hoặc hit cap) → đáp án cuối.
+            if not calls or iteration == MAX_TOOL_ITERS:
+                return {
+                    "text": out.text,
+                    "prompt_tokens": total_prompt_tokens,
+                    "completion_tokens": total_completion_tokens,
+                    "finish_reason": finish_reason,
+                    "tool_calls": tool_log,
+                    "iterations": iteration + 1,
+                }
+
+            # Có tool call → append assistant message + chạy tools + append tool messages.
+            # Dùng RAW TEXT (out.text) cho assistant content thay vì structured tool_calls:
+            # template render lại sẽ giữ nguyên đúng format model vừa emit (XML hoặc JSON),
+            # tránh mismatch round-trip giữa format model emit và format template render.
+            convo.append({"role": "assistant", "content": out.text})
+
+            for i, c in enumerate(calls):
+                name = c.get("name", "")
+                args = c.get("arguments", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                if name == "python_exec":
+                    code = args.get("code", "") if isinstance(args, dict) else ""
+                    result = self._exec_in_sandbox(code) if code else "[error] empty code"
+                else:
+                    result = f"[error] unknown tool: {name}"
+
+                tool_log.append({
+                    "iter": iteration,
+                    "name": name,
+                    "code": (args.get("code", "") if isinstance(args, dict) else "")[:500],
+                    "result": result[:500],
+                })
+                # Cap tool result để không phá max_model_len.
+                convo.append({
+                    "role": "tool",
+                    "tool_call_id": f"call_{iteration}_{i}",
+                    "content": result[:2000],
+                })
+
+        # Unreachable theo logic trên (vòng `iteration == MAX_TOOL_ITERS` đã return).
+        return {"text": "", "error": "tool_loop_exceeded"}
 
 
 # ───────────────────────────────────────────────
@@ -179,7 +409,8 @@ def chat(item: dict) -> dict:
           "messages": [{"role":"user","content":"..."}],
           "max_tokens": 200,
           "temperature": 0.7,
-          "thinking_mode": false
+          "thinking_mode": false,
+          "use_tools": true
         }
     """
     return LLMServer().generate.remote(
@@ -189,6 +420,7 @@ def chat(item: dict) -> dict:
         top_p=item.get("top_p", 0.95),
         max_tokens=item.get("max_tokens", 1024),
         thinking_mode=item.get("thinking_mode", False),
+        use_tools=item.get("use_tools"),
     )
 
 
@@ -205,3 +437,7 @@ def main(question: str = "2+2=?"):
     print("\n=== RESULT ===")
     print(result.get("text"))
     print(f"\ntokens: in={result.get('prompt_tokens')} out={result.get('completion_tokens')}")
+    if result.get("tool_calls"):
+        print(f"tool_calls: {len(result['tool_calls'])} (iters={result.get('iterations')})")
+        for tc in result["tool_calls"]:
+            print(f"  - {tc['name']}({tc['code'][:80]}...) → {tc['result'][:120]}")

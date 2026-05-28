@@ -81,6 +81,11 @@ if TEST_SET not in ("chat", "rag"):
 
 MAX_TOKENS: int = int(env_config.get("EVAL_MAX_TOKENS", "512"))
 TARGET_TEMPERATURE: float = float(env_config.get("EVAL_TEMPERATURE", "0.2"))
+# Bật python_exec tool cho target. None = theo USE_TOOLS_DEFAULT của Modal server.
+_use_tools_raw = env_config.get("USE_TOOLS")
+USE_TOOLS: bool | None = (
+    None if _use_tools_raw is None else _use_tools_raw.strip().lower() == "true"
+)
 GENERATE_WORKERS: int = max(1, int(env_config.get("EVAL_GENERATE_WORKERS", "1")))
 JUDGE_TEMPERATURE: float = float(env_config.get("JUDGE_TEMPERATURE", "0.0"))
 JUDGE_RPM: int = int(env_config.get("JUDGE_RPM", "15"))
