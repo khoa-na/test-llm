@@ -88,6 +88,7 @@ USE_TOOLS: bool | None = (
 )
 GENERATE_WORKERS: int = max(1, int(env_config.get("EVAL_GENERATE_WORKERS", "1")))
 JUDGE_TEMPERATURE: float = float(env_config.get("JUDGE_TEMPERATURE", "0.0"))
+JUDGE_SEED: int = int(env_config.get("JUDGE_SEED", "42"))
 JUDGE_RPM: int = int(env_config.get("JUDGE_RPM", "15"))
 
 # Đọc cùng key MODEL_NAME như modal_app.py để đồng bộ.
