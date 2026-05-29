@@ -108,6 +108,9 @@ def _run_one(case, system_prompt):
         "latency": latency,
         "prompt_tokens": res.get("prompt_tokens", 0),
         "completion_tokens": res.get("completion_tokens", 0),
+        # RAG live: nguồn model đã tự truy xuất (để judge đối chiếu grounding + xem recall).
+        "retrieved": res.get("retrieved", []),
+        "retrieved_context": res.get("retrieved_context", ""),
     }
 
     if case.get("language") == "en":
@@ -141,6 +144,21 @@ def _augment_case_for_recovery(case, case_output):
         {"role": "assistant", "content": t1},
         {"role": "user", "content": case_output.get("recovery_prompt", EN_RECOVERY_PROMPT)},
     ]
+    return c
+
+
+def _inject_retrieved_source(case, case_output):
+    """RAG live: dùng nội dung model đã TỰ truy xuất làm NGUỒN inline cho judge,
+    để judge chấm grounding (UNGROUNDED/SOURCE_OMISSION) đúng như set 'rag'.
+
+    Set `rag_source` = chuỗi text (KHÔNG phải path) → judge.py bật chế độ RAG và
+    dùng nó làm source_text. Rỗng (model refuse / không có data) → giữ nguyên case
+    (judge chấm hành vi refuse qua must_not_contain)."""
+    ctx = case_output.get("retrieved_context")
+    if not ctx:
+        return case
+    c = dict(case)
+    c["rag_source"] = ctx
     return c
 
 
@@ -403,6 +421,8 @@ def run_judge_stage(test_cases, system_prompt):
         else:
             # EN recovery: judge thấy nguyên luồng 2 lượt (turns mở rộng).
             judge_case = _augment_case_for_recovery(case, case_output)
+            # RAG live: gắn nguồn đã truy xuất để judge chấm grounding.
+            judge_case = _inject_retrieved_source(judge_case, case_output)
             verdict, latency, p_tokens, c_tokens, output_text, judge_err = \
                 _judge_single_run(judge_case, case_output, system_prompt)
 
