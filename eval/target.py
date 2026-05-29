@@ -4,7 +4,14 @@ import warnings
 
 import requests
 
-from config import MAX_TOKENS, MODAL_ENDPOINT_URL, MODE, TARGET_TEMPERATURE, USE_TOOLS
+from config import (
+    MAX_TOKENS,
+    MODAL_ENDPOINT_URL,
+    MODE,
+    TARGET_TEMPERATURE,
+    USE_RETRIEVAL,
+    USE_TOOLS,
+)
 
 warnings.filterwarnings(
     "ignore",
@@ -27,6 +34,7 @@ def _call_sdk(messages, thinking_mode=False):
         max_tokens=MAX_TOKENS,
         temperature=TARGET_TEMPERATURE,
         thinking_mode=thinking_mode,
+        use_retrieval=USE_RETRIEVAL,
     )
     if USE_TOOLS is not None:
         kwargs["use_tools"] = USE_TOOLS
@@ -43,6 +51,7 @@ def _call_http(messages, thinking_mode=False):
         "max_tokens": MAX_TOKENS,
         "temperature": TARGET_TEMPERATURE,
         "thinking_mode": thinking_mode,
+        "use_retrieval": USE_RETRIEVAL,
     }
     if USE_TOOLS is not None:
         body["use_tools"] = USE_TOOLS
