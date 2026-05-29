@@ -49,7 +49,9 @@ def _resolve_reference_date() -> date:
 REFERENCE_DATE: date = _resolve_reference_date()
 DEFAULT_TOP_K: int = int(os.environ.get("RAG_TOP_K", "4"))
 # Ngưỡng cosine tối thiểu để 1 chunk được coi là liên quan (lọc nhiễu).
-SEMANTIC_MIN_SCORE: float = float(os.environ.get("RAG_MIN_SCORE", "0.35"))
+# 0.56 tách được TP (báo cáo/biên bản đúng ~0.59-0.73) khỏi nhiễu refuse (~0.40-0.55)
+# với bge-m3 trên corpus hiện tại. Corpus đổi/lớn lên → tune lại qua env RAG_MIN_SCORE.
+SEMANTIC_MIN_SCORE: float = float(os.environ.get("RAG_MIN_SCORE", "0.56"))
 
 # ───────────────────────────────────────────────
 # Router keywords (so khớp sau khi BỎ DẤU — để input không dấu "lich" vẫn khớp "lịch")
@@ -288,10 +290,10 @@ class Retriever:
         if docs_dir.exists():
             for p in sorted(docs_dir.glob("*.md")):
                 self.chunks += chunk_markdown(p.read_text(encoding="utf-8"), f"docs/{p.name}")
-        # body email → semantic chunk (để hỏi "email X nói gì" bắt được nội dung)
-        for r in self.conn.execute("SELECT sender, date, subject, body FROM emails"):
-            txt = f"Email từ {r['sender']} ({r['date']}) — {r['subject']}: {r['body']}"
-            self.chunks.append(Chunk(text=txt, source=f"email/{r['sender']}", doc_id=f"email/{r['sender']}"))
+        # LƯU Ý: KHÔNG đẩy email vào semantic index. Email chỉ truy xuất qua đường
+        # structured (_add_emails, có LỌC THEO TÊN người). Nếu cho email vào semantic,
+        # bản vector sẽ lách bộ lọc tên → hỏi người không có vẫn kéo email người khác
+        # (vd "email chị Hương" → lọt email chị Lan score 0.60). Giữ email structured-only.
 
     def build_index(self, embedder):
         """Encode toàn bộ chunk. `embedder.encode(list[str]) -> ndarray (N, D)`."""

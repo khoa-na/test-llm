@@ -87,6 +87,7 @@ SANDBOX_LIFETIME = 1800        # giây — sandbox tự kill sau idle
 USE_RETRIEVAL_DEFAULT = env_config.get("USE_RETRIEVAL", "true").lower() == "true"
 EMBED_MODEL = env_config.get("EMBED_MODEL", "BAAI/bge-m3")           # text-only, đa ngôn ngữ
 RETRIEVAL_TOP_K = int(env_config.get("RAG_TOP_K", "4"))
+RAG_MIN_SCORE = env_config.get("RAG_MIN_SCORE", "0.56")              # ngưỡng cosine lọc nhiễu semantic
 RAG_CORPUS_DIR = "/root/rag_corpus"                                  # nơi corpus được mount trong container
 # Ngày "hôm nay" của trợ lý — neo cho structured query (container chạy UTC, test neo ngày cố định).
 RAG_REFERENCE_DATE = env_config.get("RAG_REFERENCE_DATE", "2026-05-27")
@@ -116,6 +117,7 @@ image = (
         "VLLM_NO_USAGE_STATS": "1",
         "RAG_CORPUS_DIR": RAG_CORPUS_DIR,
         "RAG_REFERENCE_DATE": RAG_REFERENCE_DATE,
+        "RAG_MIN_SCORE": RAG_MIN_SCORE,
     })
     # Đưa module retrieval.py + corpus vào container (available lúc runtime).
     .add_local_python_source("retrieval")
@@ -366,10 +368,15 @@ class LLMServer:
         aug = (
             f"[Dữ liệu truy xuất tự động — hôm nay {RAG_REFERENCE_DATE}]\n"
             + context_text
-            + "\n\n(Chỉ dùng dữ liệu trên + hội thoại để trả lời; không bịa ngoài phần này.)"
+            + "\n\n(Chỉ dùng dữ liệu trên + hội thoại để trả lời; không bịa ngoài phần này.)\n\n"
         )
-        insert_at = 1 if convo and convo[0].get("role") == "system" else 0
-        convo.insert(insert_at, {"role": "system", "content": aug})
+        # Prepend vào USER message CUỐI (KHÔNG chèn system message thứ hai — chat template
+        # Qwen3.5 chỉ cho system ở đầu; thêm system giữa hội thoại → TemplateError).
+        # Đây cũng đúng format data-truy-xuất mà bộ test rag.yaml cũ đã dùng.
+        for i in range(len(convo) - 1, -1, -1):
+            if convo[i].get("role") == "user":
+                convo[i] = {**convo[i], "content": aug + (convo[i].get("content", "") or "")}
+                break
         return convo, res.sources, context_text
 
     @modal.method()
