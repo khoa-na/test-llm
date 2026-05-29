@@ -43,8 +43,9 @@ def _parse_args(argv):
         help="Tên judge model. Override JUDGE_MODEL.",
     )
     p.add_argument(
-        "--set", dest="test_set", default=None, choices=["chat", "rag"],
-        help="Bộ test: 'chat' (test_cases_chat.yaml) hoặc 'rag' (test_cases_rag.yaml). "
+        "--set", dest="test_set", default=None, choices=["chat", "rag", "rag_live"],
+        help="Bộ test: 'chat' (test_cases_chat.yaml), 'rag' (test_cases_rag.yaml — data dán sẵn), "
+             "hoặc 'rag_live' (test_cases_rag_live.yaml — retrieval THẬT server-side). "
              "Override EVAL_SET (mặc định 'chat').",
     )
     p.add_argument(
@@ -75,7 +76,7 @@ JUDGE_MODEL: str = _args.judge_model or env_config.get("JUDGE_MODEL", "gemini-3.
 
 # Bộ test: chat (chỉ cần hội thoại) hoặc rag (cần data truy xuất). Mỗi bộ 1 file riêng.
 TEST_SET: str = _args.test_set or env_config.get("EVAL_SET", "chat")
-if TEST_SET not in ("chat", "rag"):
+if TEST_SET not in ("chat", "rag", "rag_live"):
     print(f"⚠️ EVAL_SET='{TEST_SET}' không hỗ trợ. Fallback về 'chat'.")
     TEST_SET = "chat"
 
@@ -85,6 +86,13 @@ TARGET_TEMPERATURE: float = float(env_config.get("EVAL_TEMPERATURE", "0.2"))
 _use_tools_raw = env_config.get("USE_TOOLS")
 USE_TOOLS: bool | None = (
     None if _use_tools_raw is None else _use_tools_raw.strip().lower() == "true"
+)
+# Bật retrieval THẬT server-side. Mặc định: chỉ bật cho set 'rag_live' (các set khác
+# data đã inline/self-contained nên KHÔNG retrieve để tránh chèn nhiễu). Override qua env.
+_use_retrieval_raw = env_config.get("USE_RETRIEVAL")
+USE_RETRIEVAL: bool = (
+    (TEST_SET == "rag_live") if _use_retrieval_raw is None
+    else _use_retrieval_raw.strip().lower() == "true"
 )
 GENERATE_WORKERS: int = max(1, int(env_config.get("EVAL_GENERATE_WORKERS", "1")))
 JUDGE_TEMPERATURE: float = float(env_config.get("JUDGE_TEMPERATURE", "0.0"))

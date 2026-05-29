@@ -1,0 +1,8 @@
+[
+  {"title": "Soạn hợp đồng khách C", "due_date": "2026-05-25", "status": "đang làm", "priority": "cao", "assignee": "Phòng Pháp chế"},
+  {"title": "Gửi proposal cho khách Y", "due_date": "2026-05-26", "status": "đã xong", "priority": "trung bình", "assignee": "Sales"},
+  {"title": "Duyệt ngân sách marketing", "due_date": "2026-05-28", "status": "chưa làm", "priority": "cao", "assignee": "Marketing"},
+  {"title": "Gửi báo cáo Q2 cho HĐQT", "due_date": "2026-05-29", "status": "đang làm", "priority": "cao", "assignee": "Minh (kế toán)"},
+  {"title": "Cập nhật website", "due_date": "2026-05-30", "status": "đang làm", "priority": "trung bình", "assignee": "IT"},
+  {"title": "Review CV ứng viên", "due_date": "2026-05-31", "status": "chưa làm", "priority": "thấp", "assignee": "HR"}
+]

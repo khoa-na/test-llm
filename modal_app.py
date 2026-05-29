@@ -13,6 +13,7 @@ Gọi từ client khác:
 import json
 import os
 import re
+from datetime import date
 from pathlib import Path
 from dotenv import dotenv_values, load_dotenv
 import modal
@@ -29,11 +30,11 @@ env_config = {
 # ───────────────────────────────────────────────
 MODEL_NAME = env_config.get("MODEL_NAME", "Qwen/Qwen3.5-9B")
 MAX_MODEL_LEN = int(env_config.get("MAX_MODEL_LEN", "4096"))           # A10G 24GB chật, để 4096 cho an toàn
-GPU_MEM_UTIL = float(env_config.get("GPU_MEMORY_UTILIZATION", "0.90")) # chừa headroom KV cache
+GPU_MEM_UTIL = float(env_config.get("GPU_MEMORY_UTILIZATION", "0.80")) # chừa headroom KV cache + embedder RAG
 DTYPE = env_config.get("DTYPE", "bfloat16")
 ENFORCE_EAGER = env_config.get("ENFORCE_EAGER", "true").lower() == "true"  # skip CUDA graphs → save ~2GB
-MAX_NUM_SEQS = int(env_config.get("MAX_NUM_SEQS", "4"))                # batch nhỏ cho A10G
-GPU_TYPE = env_config.get("MODAL_GPU", "A10G")  # A10G 24GB | A100-40GB | H100
+MAX_NUM_SEQS = int(env_config.get("MAX_NUM_SEQS", "4"))                # batch nhỏ
+GPU_TYPE = env_config.get("MODAL_GPU", "L40S")  # L40S 48GB (mặc định) | A10G 24GB | A100 | H100
 
 # ───────────────────────────────────────────────
 # Tool-calling config
@@ -80,6 +81,17 @@ SANDBOX_EXEC_TIMEOUT = 8       # giây / một lần exec code
 SANDBOX_LIFETIME = 1800        # giây — sandbox tự kill sau idle
 
 # ───────────────────────────────────────────────
+# RAG retrieval config (hybrid: semantic docs/email + structured calendar/task)
+# ───────────────────────────────────────────────
+# Bật retrieve tự động trước generate. Set USE_RETRIEVAL=false để tắt (về behaviour cũ).
+USE_RETRIEVAL_DEFAULT = env_config.get("USE_RETRIEVAL", "true").lower() == "true"
+EMBED_MODEL = env_config.get("EMBED_MODEL", "BAAI/bge-m3")           # text-only, đa ngôn ngữ
+RETRIEVAL_TOP_K = int(env_config.get("RAG_TOP_K", "4"))
+RAG_CORPUS_DIR = "/root/rag_corpus"                                  # nơi corpus được mount trong container
+# Ngày "hôm nay" của trợ lý — neo cho structured query (container chạy UTC, test neo ngày cố định).
+RAG_REFERENCE_DATE = env_config.get("RAG_REFERENCE_DATE", "2026-05-27")
+
+# ───────────────────────────────────────────────
 # Container image cho LLM server (vLLM)
 # ───────────────────────────────────────────────
 image = (
@@ -94,12 +106,20 @@ image = (
     # Modal không chạy entrypoint của image — Modal Function tự spawn python process
     .pip_install(
         "huggingface_hub[hf_transfer]>=0.26",
+        # RAG embedder. vLLM image đã có torch/transformers nên sentence-transformers
+        # chỉ thêm layer mỏng; nếu deploy báo conflict torch thì pin version tương ứng.
+        "sentence-transformers>=3.0",
     )
     .env({
         "HF_HUB_ENABLE_HF_TRANSFER": "1",  # download model nhanh 5-10x
         # V1 engine là default từ vLLM 0.20+, không cần set
         "VLLM_NO_USAGE_STATS": "1",
+        "RAG_CORPUS_DIR": RAG_CORPUS_DIR,
+        "RAG_REFERENCE_DATE": RAG_REFERENCE_DATE,
     })
+    # Đưa module retrieval.py + corpus vào container (available lúc runtime).
+    .add_local_python_source("retrieval")
+    .add_local_dir(str(Path(__file__).parent / "rag_corpus"), remote_path=RAG_CORPUS_DIR)
 )
 
 # ───────────────────────────────────────────────
@@ -141,9 +161,11 @@ class LLMServer:
     @modal.enter(snap=True)
     def load_imports(self):
         """Pre-snapshot (CPU only): chạy imports nặng. KHÔNG được đụng GPU/CUDA ở đây."""
-        print(f"[modal] [snap] Importing vllm/transformers ...", flush=True)
+        print(f"[modal] [snap] Importing vllm/transformers/sentence-transformers ...", flush=True)
         import vllm  # noqa: F401
         import transformers  # noqa: F401
+        import sentence_transformers  # noqa: F401  (import CPU-only, an toàn cho snapshot)
+        import retrieval  # noqa: F401  (module hybrid RAG — chỉ import, chưa đụng GPU/corpus)
         # Tuyệt đối không gọi torch.cuda.is_available() — sẽ init CUDA và phá snapshot.
         print("[modal] [snap] Imports done — ready to snapshot.", flush=True)
 
@@ -177,6 +199,29 @@ class LLMServer:
         self.tokenizer = self.llm.get_tokenizer()
         self._sandbox = None  # lazy-init khi có tool call đầu tiên
         print("[modal] Model ready.", flush=True)
+
+        # ───── RAG: load embedder SAU vLLM (để vLLM giành VRAM trước) + build index ─────
+        self.retriever = None
+        if USE_RETRIEVAL_DEFAULT:
+            try:
+                import retrieval
+                from sentence_transformers import SentenceTransformer
+                try:
+                    ref_date = date.fromisoformat(RAG_REFERENCE_DATE)
+                except ValueError:
+                    ref_date = None
+                print(f"[modal] [rag] Loading embedder {EMBED_MODEL} on cuda ...", flush=True)
+                embedder = SentenceTransformer(EMBED_MODEL, device="cuda")
+                self.retriever = retrieval.Retriever(
+                    corpus_dir=RAG_CORPUS_DIR, reference_date=ref_date
+                )
+                self.retriever.build_index(embedder)
+                print(f"[modal] [rag] Retriever ready: {len(self.retriever.chunks)} chunks indexed.",
+                      flush=True)
+            except Exception as e:
+                print(f"[modal] [rag] Retriever init FAILED ({e}) — chạy không retrieval.",
+                      flush=True)
+                self.retriever = None
 
     @modal.exit()
     def cleanup(self):
@@ -288,6 +333,54 @@ class LLMServer:
         return calls, residual
 
     # ───────────────────────────────────────────────
+    # RAG retrieval helpers
+    # ───────────────────────────────────────────────
+    @staticmethod
+    def _last_user_query(messages) -> str:
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                return m.get("content", "") or ""
+        return ""
+
+    def _augment_with_retrieval(self, messages, enable_retrieval):
+        """Trả (convo, sources, context_text). Nếu retrieve được data → chèn 1 system
+        message phụ ngay sau system prompt gốc. Rỗng → giữ nguyên (model sẽ tự refuse).
+
+        `context_text` = các khối đã truy xuất (không kèm câu chỉ dẫn) — để eval/judge
+        dùng làm NGUỒN đối chiếu grounding ở chế độ live.
+        """
+        convo = list(messages)
+        if not (enable_retrieval and self.retriever is not None):
+            return convo, [], ""
+        query = self._last_user_query(messages)
+        if not query:
+            return convo, [], ""
+        try:
+            res = self.retriever.retrieve(query, top_k=RETRIEVAL_TOP_K)
+        except Exception as e:
+            print(f"[modal] [rag] retrieve error: {e}", flush=True)
+            return convo, [], ""
+        if res.is_empty:
+            return convo, [], ""
+        context_text = "\n\n".join(res.blocks)
+        aug = (
+            f"[Dữ liệu truy xuất tự động — hôm nay {RAG_REFERENCE_DATE}]\n"
+            + context_text
+            + "\n\n(Chỉ dùng dữ liệu trên + hội thoại để trả lời; không bịa ngoài phần này.)"
+        )
+        insert_at = 1 if convo and convo[0].get("role") == "system" else 0
+        convo.insert(insert_at, {"role": "system", "content": aug})
+        return convo, res.sources, context_text
+
+    @modal.method()
+    def retrieve_only(self, query: str, top_k: int | None = None) -> dict:
+        """Chỉ chạy retrieval (không generate) — phục vụ đo recall@k và debug."""
+        if getattr(self, "retriever", None) is None:
+            return {"blocks": [], "sources": [], "error": "retriever_unavailable"}
+        res = self.retriever.retrieve(query, top_k=top_k or RETRIEVAL_TOP_K)
+        return {"blocks": res.blocks, "sources": res.sources}
+
+    # ───────────────────────────────────────────────
     # Public method
     # ───────────────────────────────────────────────
     @modal.method()
@@ -300,6 +393,7 @@ class LLMServer:
         max_tokens: int = 1024,
         thinking_mode: bool = False,
         use_tools: bool | None = None,
+        use_retrieval: bool | None = None,
     ) -> dict:
         from vllm import SamplingParams
 
@@ -318,15 +412,18 @@ class LLMServer:
         if not messages:
             return {"error": "Thiếu 'messages' hoặc 'prompt'."}
 
-        # ───── Path mới: messages + agentic tool loop ─────
+        # ───── Path mới: messages + (retrieval) + agentic tool loop ─────
         enable_tools = USE_TOOLS_DEFAULT if use_tools is None else bool(use_tools)
         tools = [PYTHON_EXEC_TOOL] if enable_tools else None
+
+        # RAG: retrieve TRƯỚC tool-loop, chèn data truy xuất vào system message phụ.
+        enable_retrieval = USE_RETRIEVAL_DEFAULT if use_retrieval is None else bool(use_retrieval)
+        convo, retrieved_sources, retrieved_context = self._augment_with_retrieval(messages, enable_retrieval)
 
         params = SamplingParams(temperature=temperature, top_p=top_p, max_tokens=max_tokens)
         total_prompt_tokens = 0
         total_completion_tokens = 0
         tool_log: list[dict] = []
-        convo = list(messages)
         finish_reason = ""
 
         for iteration in range(MAX_TOOL_ITERS + 1):
@@ -344,6 +441,8 @@ class LLMServer:
                     "prompt_tokens": total_prompt_tokens,
                     "completion_tokens": total_completion_tokens,
                     "finish_reason": finish_reason,
+                    "retrieved": retrieved_sources,
+                    "retrieved_context": retrieved_context,
                 }
 
             calls, residual = self._parse_tool_calls(out.text)
@@ -356,6 +455,8 @@ class LLMServer:
                     "finish_reason": finish_reason,
                     "tool_calls": tool_log,
                     "iterations": iteration + 1,
+                    "retrieved": retrieved_sources,
+                    "retrieved_context": retrieved_context,
                 }
 
             # Có tool call → append assistant message + chạy tools + append tool messages.
@@ -410,7 +511,8 @@ def chat(item: dict) -> dict:
           "max_tokens": 200,
           "temperature": 0.7,
           "thinking_mode": false,
-          "use_tools": true
+          "use_tools": true,
+          "use_retrieval": true
         }
     """
     return LLMServer().generate.remote(
@@ -421,6 +523,7 @@ def chat(item: dict) -> dict:
         max_tokens=item.get("max_tokens", 1024),
         thinking_mode=item.get("thinking_mode", False),
         use_tools=item.get("use_tools"),
+        use_retrieval=item.get("use_retrieval"),
     )
 
 
@@ -437,6 +540,8 @@ def main(question: str = "2+2=?"):
     print("\n=== RESULT ===")
     print(result.get("text"))
     print(f"\ntokens: in={result.get('prompt_tokens')} out={result.get('completion_tokens')}")
+    if result.get("retrieved"):
+        print(f"retrieved sources: {result['retrieved']}")
     if result.get("tool_calls"):
         print(f"tool_calls: {len(result['tool_calls'])} (iters={result.get('iterations')})")
         for tc in result["tool_calls"]:

@@ -1,0 +1,191 @@
+# Test cases LOAI 3 - RAG LIVE (retrieval THAT, server-side).
+# Khac test_cases_rag.yaml: KHONG dan data vao prompt. Model tu retrieve tu corpus
+# rag_corpus/ (calendar/tasks/emails/docs). Query la cau hoi THUAN.
+#
+# Chay:  python eval/run_eval_judge.py --set rag_live      (generate + judge, retrieval bat)
+#        python eval/eval_retrieval.py                      (do recall@k cua retrieval)
+#
+# Moi case co them:
+#   expected_sources: list SUBSTRING id nguon ma retriever PHAI tra ve (de do recall).
+#                     [] = case REFUSE (corpus khong co data -> bot phai tu choi, khong bia).
+# Neo ngay: corpus + RAG_REFERENCE_DATE = 2026-05-27 (thu Tu).
+
+system_prompt: |-
+  Bạn là trợ lý kiêm thư ký AI cho lãnh đạo và đội ngũ doanh nghiệp. Bạn giúp quản lý công việc, lịch, nhắc việc, theo dõi tiến độ, soạn thảo (email/tin nhắn/biên bản/báo cáo), tóm tắt và truyền đạt thông tin. Bạn CHỦ ĐỘNG giúp công việc tiến tới, không chỉ trả lời cho có.
+
+  NGUYÊN TẮC CỐT LÕI (ưu tiên từ trên xuống khi xung đột):
+  1. TRUNG THỰC DỮ LIỆU — tuyệt đối không bịa. Chỉ dùng thông tin có trong hội thoại hoặc dữ liệu được cung cấp/truy xuất. Không bịa tên người, lịch, email, số liệu hay trạng thái. Nếu dữ liệu thuộc hệ thống mà bạn chưa được cung cấp → nói rõ "chưa có dữ liệu/quyền truy cập" rồi hỏi, KHÔNG đoán.
+  2. KHÔNG TỰ NHẬN ĐÃ THỰC THI. Bạn không tự gửi email/tin nhắn, không tự đặt lịch thật, không tự thông báo cho người khác. Hãy SOẠN NHÁP và ĐỀ XUẤT rồi xin xác nhận. KHÔNG nói "đã gửi", "đã thông báo", "đã thiết lập trong hệ thống" khi chưa có căn cứ thực thi. Được phép: "đã ghi nhận", "đã soạn nháp", "đã chuẩn bị".
+  3. ĐÚNG NGÔN NGỮ. Trả lời cùng ngôn ngữ với người dùng. User viết tiếng Việt → 100% tiếng Việt (giữ thuật ngữ kỹ thuật như KPI, deadline, email).
+
+  KHI NÀO LÀM NGAY — KHI NÀO HỎI LẠI:
+  - Đủ thông tin để làm → làm ngay (soạn nháp/xác nhận/đề xuất), không hỏi vòng vo.
+  - Thiếu thông tin BẮT BUỘC → hỏi lại đúng 1 câu quan trọng nhất.
+  - Yêu cầu NGOÀI phạm vi trợ lý nội bộ → từ chối lịch sự, gợi ý kênh phù hợp.
+
+  TÍNH TOÁN & THỜI GIAN (BẮT BUỘC):
+  - Mọi câu trả lời chứa số liệu phép tính HOẶC ngày-tháng-cụ-thể đều BẮT BUỘC PHẢI gọi tool `python_exec` để tính trước. KHÔNG tự nhẩm, KHÔNG ước lượng.
+  - Code phải `print()` kết quả; sau đó dùng số tool trả về để soạn câu trả lời cuối cùng.
+
+  VĂN PHONG:
+  - Ngắn gọn, chuyên nghiệp, đúng vai thư ký. Khi thật sự thiếu dữ liệu, trả lời tối đa 2 câu.
+  - Câu hỏi Có/Không → trả lời thẳng trước, kèm lý do ngắn.
+
+test_cases:
+# ───────── Lịch (calendar — structured) ─────────
+- id: RL01
+  use_case: UC-01
+  criteria: [TC-02, TC-06, TC-01]
+  name: Lịch hôm nay (tự retrieve)
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: lịch hôm nay có gì
+  expected:
+    must_contain: ['09:00', '14:00', 'ngân sách']
+    must_not_contain: [Singapore]   # 30/5, không thuộc hôm nay
+    eval_notes: 'Liệt kê đúng các sự kiện NGÀY 27/05 từ calendar (giao ban 09:00, ngân sách Q3 14:00, call khách X 16:00). Không bịa, không kéo sự kiện ngày khác.'
+  expected_sources: ['calendar/2026-05-27']
+- id: RL02
+  use_case: UC-01
+  criteria: [TC-06, TC-02, TC-01]
+  name: Lịch chiều nay (lọc buổi, không dấu)
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: chieu nay co lich gi khong
+  expected:
+    must_contain: ['14:00']
+    must_not_contain: ['09:00']   # buổi sáng, phải bị lọc
+    eval_notes: 'Hiểu input không dấu + chỉ liệt kê sự kiện buổi chiều 27/05 (14:00 ngân sách Q3, 16:00 call khách X). Không liệt kê 09:00 sáng.'
+  expected_sources: ['calendar/2026-05-27/14:00', 'calendar/2026-05-27/16:00']
+- id: RL03
+  use_case: UC-01
+  criteria: [TC-01, TC-02]
+  name: Họp 14h với ai
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: cuộc họp 14h chiều nay với những ai
+  expected:
+    must_contain: [Nam, Lan]
+    eval_notes: 'Trả đúng thành phần họp ngân sách Q3 14:00 từ data (anh Nam CFO, chị Lan KTT). Không bịa người ngoài data.'
+  expected_sources: ['calendar/2026-05-27/14:00']
+
+# ───────── Task (structured) ─────────
+- id: RL04
+  use_case: UC-02
+  criteria: [TC-02, TC-01]
+  name: Task nào đang trễ
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: task nào đang trễ hạn
+  expected:
+    must_contain: [khách C, '25']
+    must_not_contain: [proposal]   # đã xong, không phải trễ
+    eval_notes: 'Chỉ ra đúng task quá hạn: Soạn hợp đồng khách C (hạn 25/5, đang làm). Không kể task đã xong (proposal) hay chưa tới hạn.'
+  expected_sources: ['task/Soạn hợp đồng khách C']
+- id: RL05
+  use_case: UC-02
+  criteria: [TC-02, TC-06, TC-01]
+  name: Việc gấp tuần này
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tuần này có việc gì gấp cần ưu tiên
+  expected:
+    must_contain: [ngân sách, 'Q2']
+    eval_notes: 'Nêu các task ưu tiên cao tới hạn trong tuần 25-31/05: Duyệt ngân sách marketing (28/5), Gửi báo cáo Q2 HĐQT (29/5). Sắp theo độ gấp.'
+  expected_sources: ['task/Duyệt ngân sách marketing', 'task/Gửi báo cáo Q2 cho HĐQT']
+- id: RL06
+  use_case: UC-04
+  criteria: [TC-01, TC-02]
+  name: Trạng thái báo cáo Q2 của Minh
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: Minh gửi báo cáo Q2 cho HĐQT chưa
+  expected:
+    must_contain: [Minh]
+    must_not_contain: [đã gửi, đã nộp]   # task mới 'đang làm', chưa xong
+    eval_notes: 'Theo data task: "Gửi báo cáo Q2 cho HĐQT" assignee Minh, trạng thái ĐANG LÀM (chưa xong). Phải nói chưa hoàn thành, không khẳng định đã gửi.'
+  expected_sources: ['task/Gửi báo cáo Q2 cho HĐQT']
+
+# ───────── Email (structured + semantic) ─────────
+- id: RL07
+  use_case: UC-07
+  criteria: [TC-01, TC-02, TC-04]
+  name: Email anh Tuấn nói gì
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: email anh Tuấn sáng nay nói gì
+  expected:
+    must_contain: ['12%', '80 triệu']
+    eval_notes: 'Tóm tắt đúng email anh Tuấn (27/5 08:15): giá server giảm 12%, cần duyệt ngân sách 80 triệu trước thứ 5. Không bịa chi tiết ngoài email.'
+  expected_sources: ['email/anh Tuấn']
+
+# ───────── Docs (semantic) ─────────
+- id: RL08
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Lợi nhuận sau thuế Q1
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: lợi nhuận sau thuế quý 1 năm nay là bao nhiêu
+  expected:
+    must_contain: ['5.84']
+    must_not_contain: ['48.2', '7.3']   # doanh thu / LN trước thuế — không nhầm
+    eval_notes: 'Trích đúng từ báo cáo tài chính Q1: lợi nhuận sau thuế 5.84 tỷ. KHÔNG nhầm với doanh thu 48.2 tỷ hay LN trước thuế 7.3 tỷ.'
+  expected_sources: ['docs/bao_cao_tai_chinh']
+- id: RL09
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Biên bản họp ABC
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tìm biên bản họp với đối tác ABC
+  expected:
+    must_contain: ['22/03', MOU]
+    eval_notes: 'Trả đúng nội dung biên bản ABC 15/03: ABC đồng ý ký MOU vào 22/03/2026, đại diện ông Tan/bà Lee. Không bịa.'
+  expected_sources: ['docs/bien_ban_hop_abc']
+
+# ───────── REFUSE: corpus KHÔNG có data → phải từ chối, không bịa ─────────
+- id: RL10
+  use_case: UC-07
+  criteria: [TC-01, TC-08]
+  name: '[REFUSE] Email người không có trong store'
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: email từ chị Hương phòng nhân sự gửi hôm qua nói gì
+  expected:
+    must_not_contain: [chị Hương nói, chị Hương viết, theo email chị Hương]
+    eval_notes: 'CRITICAL: corpus KHÔNG có email chị Hương → phải nói chưa có/không tìm thấy, KHÔNG bịa nội dung. Tương phản RL07 (có email anh Tuấn).'
+  expected_sources: []
+- id: RL11
+  use_case: UC-01
+  criteria: [TC-01, TC-08]
+  name: '[REFUSE] Lịch họp không tồn tại trong store'
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: lịch họp với đối tác Nhật Bản chiều mai mấy giờ
+  expected:
+    must_not_contain: [phòng họp, '14:', '15:']
+    eval_notes: 'CRITICAL: corpus không có cuộc họp với đối tác Nhật → phải nói chưa có thông tin/lịch này, KHÔNG bịa giờ/địa điểm.'
+  expected_sources: []
