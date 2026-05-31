@@ -1,10 +1,48 @@
 # Vietnamese AI Secretary — LLM on Modal
 
-A serverless **vLLM** worker on **Modal** powering a Vietnamese enterprise secretary chatbot. Beyond serving, the repo ships:
+[![tests](https://github.com/khoa-na/vietnamese-secretary-llm/actions/workflows/tests.yml/badge.svg)](https://github.com/khoa-na/vietnamese-secretary-llm/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- **Server-side hybrid RAG** — combines *structured* retrieval (calendar / tasks / emails via in-memory SQLite) with *semantic* retrieval (`.md` documents via **bge-m3** embeddings), with intent routing done by an **embedding router**.
-- **`python_exec` tool-calling** — the model calls it to run deterministic arithmetic / date math, executed in an isolated **Modal Sandbox** (no network).
-- **An LLM-as-Judge evaluation harness** (Gemini) over three test sets, with multi-model comparison reports.
+A serverless **vLLM** worker on **Modal** powering a Vietnamese enterprise secretary chatbot — with server-side hybrid RAG, deterministic tool-calling, and a custom LLM-as-Judge evaluation harness that benchmarks three sub-10B models.
+
+## Highlights
+
+- **Benchmarked 3 sub-10B LLMs across 97 test cases** with a custom LLM-as-Judge harness (8 weighted criteria, multi-run consistency penalty, RAG grounding checks). Result: DeepSeek-R1-8B 94.7 ~= Gemma-4-E4B 94.2 > Qwen3.5-9B 92.1.
+- **Server-side hybrid RAG** (structured SQLite + semantic bge-m3, embedding intent router) reaching **recall@4 = 100%** on the 34-case retrieval suite.
+- **Found and fixed 3 real retrieval bugs through evaluation** — a Vietnamese accent collision (`tối`/`tôi`), a substring name-match leak, and a debug cosine score leaking into the prompt and causing hallucination.
+- **Deterministic tool-calling**: the model offloads arithmetic/date math to a sandboxed `python_exec` (isolated Modal Sandbox, no network).
+- **Serverless cost optimization**: scale-to-zero (`scaledown_window`) plus CPU memory snapshotting to cut cold-start time.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  U[User query] --> RT{Embedding router}
+  RT -->|calendar / task / email intent| SQL[(SQLite structured)]
+  RT -->|always| SEM[bge-m3 semantic over docs]
+  SQL --> AUG[Augment prompt with retrieved context]
+  SEM --> AUG
+  AUG --> LLM[vLLM model]
+  LLM -->|tool_call| SB[python_exec in Modal Sandbox]
+  SB -->|result| LLM
+  LLM --> ANS[Answer]
+```
+
+- **Hybrid RAG** — structured retrieval (calendar / tasks / emails via in-memory SQLite, relative-date parsing) plus semantic retrieval (`.md` docs via bge-m3), with intent routing by embedding similarity to anchor sentences.
+- **Tool-calling** — `python_exec` runs deterministic computation inside an isolated Modal Sandbox.
+- **Evaluation** — an LLM-as-Judge harness (Gemini) over three test sets with multi-model comparison reports.
+
+## Results
+
+Across 97 cases (chat 63 + rag_live 34), judged by `gemini-3.1-flash-lite` (same config, only `MODEL_NAME` changes):
+
+| Model | Params | PASS | Production-ready (>=75) | Overall |
+|---|---|---|---|---|
+| DeepSeek-R1-0528-Qwen3-8B | 8B | 97.9% | 95.9% | **94.7** |
+| Gemma 4-E4B | ~4.5B eff. | 96.9% | 92.8% | 94.2 |
+| Qwen3.5-9B | 9B | 94.8% | 90.7% | 92.1 |
+
+Per set: DeepSeek leads **chat** (95.6), Gemma leads **rag_live** (94.1). All three are weakest at multi-fact extraction from meeting minutes. Full reports and methodology in [`eval/comparisons/`](eval/comparisons/).
 
 ## Layout
 
@@ -20,21 +58,17 @@ eval/
   eval_retrieval.py     # measure retrieval recall@k (decoupled from generation)
   rag_diagnose.py       # tune the embedding-router threshold
   comparisons/          # model comparison reports (3-way, 2-way)
+test_retrieval.py       # CPU-only unit tests (FakeEmbedder, no GPU)
 .env.example            # config template
 ```
 
 ## Models evaluated
-
-Full reports live in `eval/comparisons/`.
 
 | Model | `MODEL_NAME` | Notes |
 |---|---|---|
 | Qwen3.5-9B (default) | `Qwen/Qwen3.5-9B` | well-rounded, strong tool-calling |
 | DeepSeek-R1-0528-Qwen3-8B | `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B` | reasoning model, somewhat verbose |
 | Gemma 4-E4B | `google/gemma-4-e4b-it` | gated (needs an HF token); runs text-only |
-
-Across 97 cases (chat 63 + rag_live 34), judged by `gemini-3.1-flash-lite`:
-**DeepSeek 94.7 ~= Gemma 94.2 > Qwen 92.1** (overall score). All three struggle most with multi-fact extraction from meeting minutes (`RL31`).
 
 ## Setup (one time)
 
@@ -103,3 +137,7 @@ GPU is billed per second while active; with `scaledown_window=5` the container s
 
 - Modal docs: https://modal.com/docs
 - vLLM on Modal: https://modal.com/docs/examples/vllm_inference
+
+## License
+
+MIT — see [LICENSE](LICENSE).
