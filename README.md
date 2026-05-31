@@ -44,6 +44,22 @@ Across 97 cases (chat 63 + rag_live 34), judged by `gemini-3.1-flash-lite` (same
 
 Per set: DeepSeek leads **chat** (95.6), Gemma leads **rag_live** (94.1). All three are weakest at multi-fact extraction from meeting minutes. Full reports and methodology in [`eval/comparisons/`](eval/comparisons/).
 
+## Demo
+
+Real response combining retrieval and tool-calling (more in [`docs/DEMO.md`](docs/DEMO.md)):
+
+> **User:** `tỷ suất lợi nhuận sau thuế trên doanh thu quý 1 là bao nhiêu phần trăm` (what is the Q1 net profit margin?)
+>
+> **Assistant:** `Tỷ suất lợi nhuận sau thuế trên doanh thu quý 1/2026 là 12,12%.`
+
+The model retrieves the two figures from the financial report (revenue 48.2, net profit 5.84), then computes the ratio deterministically instead of guessing:
+
+```python
+# python_exec, executed in an isolated Modal Sandbox
+ty_suat = (5.84 / 48.2) * 100
+print(f"{ty_suat:.2f}")   # => 12.12
+```
+
 ## Layout
 
 ```
