@@ -1,9 +1,17 @@
 [
+  {"date": "2026-05-25", "start": "09:30", "end": "10:30", "title": "Họp tổng kết tuần trước", "location": "phòng A", "attendees": "toàn bộ trưởng phòng"},
+  {"date": "2026-05-26", "start": "15:00", "end": "16:30", "title": "Đào tạo bảo mật thông tin nội bộ", "location": "hội trường tầng 2", "attendees": "toàn công ty"},
   {"date": "2026-05-27", "start": "09:00", "end": "09:30", "title": "Họp giao ban đầu tuần", "location": "phòng A", "attendees": "toàn bộ trưởng phòng"},
   {"date": "2026-05-27", "start": "11:00", "end": "12:00", "title": "Phỏng vấn ứng viên Backend", "location": "online", "attendees": "HR, Tech Lead"},
   {"date": "2026-05-27", "start": "14:00", "end": "15:00", "title": "Họp ngân sách Q3", "location": "phòng họp A", "attendees": "anh Nam (CFO), chị Lan (Kế toán trưởng)"},
   {"date": "2026-05-27", "start": "16:00", "end": "16:30", "title": "Call khách hàng X", "location": "online", "attendees": "Sales"},
   {"date": "2026-05-28", "start": "10:00", "end": "11:00", "title": "Review thiết kế UI", "location": "phòng B", "attendees": "team Design"},
   {"date": "2026-05-29", "start": "09:00", "end": "10:00", "title": "Chốt báo cáo tài chính Q2", "location": "phòng họp lớn", "attendees": "Phòng Tài chính"},
-  {"date": "2026-05-30", "start": "15:00", "end": "16:00", "title": "Ký hợp đồng đối tác Singapore", "location": "VP tầng 5", "attendees": "Ban Giám đốc"}
+  {"date": "2026-05-29", "start": "14:00", "end": "15:30", "title": "Tiếp đối tác Hàn Quốc", "location": "VP tầng 5", "attendees": "ông Park (đối tác), Ban Giám đốc"},
+  {"date": "2026-05-30", "start": "15:00", "end": "16:00", "title": "Ký hợp đồng đối tác Singapore", "location": "VP tầng 5", "attendees": "Ban Giám đốc"},
+  {"date": "2026-06-01", "start": "09:00", "end": "10:00", "title": "Họp kế hoạch tháng 6", "location": "phòng họp A", "attendees": "toàn bộ trưởng phòng"},
+  {"date": "2026-06-02", "start": "10:30", "end": "11:30", "title": "Demo sản phẩm cho khách hàng Z", "location": "online", "attendees": "Sales, Product"},
+  {"date": "2026-06-02", "start": "10:30", "end": "11:00", "title": "Họp khẩn xử lý sự cố hệ thống", "location": "phòng A", "attendees": "IT, Ban Giám đốc"},
+  {"date": "2026-06-03", "start": "14:00", "end": "15:00", "title": "Phỏng vấn vị trí Project Manager", "location": "phòng B", "attendees": "HR, Ban Giám đốc"},
+  {"date": "2026-06-05", "start": "16:30", "end": "18:00", "title": "Tiệc tổng kết quý 2", "location": "nhà hàng Sen", "attendees": "toàn công ty"}
 ]

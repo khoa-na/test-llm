@@ -8,7 +8,14 @@
 # Moi case co them:
 #   expected_sources: list SUBSTRING id nguon ma retriever PHAI tra ve (de do recall).
 #                     [] = case REFUSE (corpus khong co data -> bot phai tu choi, khong bia).
-# Neo ngay: corpus + RAG_REFERENCE_DATE = 2026-05-27 (thu Tu).
+# Neo ngay: corpus + RAG_REFERENCE_DATE = 2026-05-27 (thu Tu). Tuan nay 25-31/05; tuan sau 01-07/06.
+#
+# Corpus (v2, phong phu hon):
+#   calendar.json : 15 su kien (25/05 - 05/06), co cap trung gio 02/06 10:30 (xung dot lich).
+#   tasks.json    : 12 task; QUA HAN = {Soan hop dong khach C 25/5, Thanh toan hoa don NCC 22/5}.
+#   emails.json   : 6 email (anh Tuan, chi Lan, anh Minh, chi Ha, ong Park, anh Dung).
+#   docs/         : bao cao TC Q1, bien ban ABC, quy dinh cong tac phi, chinh sach nghi phep,
+#                   bao cao tien do du an Alpha, bien ban giao ban 20/5.
 
 system_prompt: |-
   Bạn là trợ lý kiêm thư ký AI cho lãnh đạo và đội ngũ doanh nghiệp. Bạn giúp quản lý công việc, lịch, nhắc việc, theo dõi tiến độ, soạn thảo (email/tin nhắn/biên bản/báo cáo), tóm tắt và truyền đạt thông tin. Bạn CHỦ ĐỘNG giúp công việc tiến tới, không chỉ trả lời cho có.
@@ -32,7 +39,7 @@ system_prompt: |-
   - Câu hỏi Có/Không → trả lời thẳng trước, kèm lý do ngắn.
 
 test_cases:
-# ───────── Lịch (calendar — structured) ─────────
+# ═══════════════════ LỊCH (calendar — structured, lọc theo ngày tương đối) ═══════════════════
 - id: RL01
   use_case: UC-01
   criteria: [TC-02, TC-06, TC-01]
@@ -44,8 +51,8 @@ test_cases:
     content: lịch hôm nay có gì
   expected:
     must_contain: ['09:00', '14:00', 'ngân sách']
-    must_not_contain: [Singapore]   # 30/5, không thuộc hôm nay
-    eval_notes: 'Liệt kê đúng các sự kiện NGÀY 27/05 từ calendar (giao ban 09:00, ngân sách Q3 14:00, call khách X 16:00). Không bịa, không kéo sự kiện ngày khác.'
+    must_not_contain: [Singapore]
+    eval_notes: 'Liệt kê đúng 4 sự kiện NGÀY 27/05 (giao ban 09:00, phỏng vấn 11:00, ngân sách Q3 14:00, call khách X 16:00). Không kéo sự kiện ngày khác.'
   expected_sources: ['calendar/2026-05-27']
 - id: RL02
   use_case: UC-01
@@ -58,8 +65,8 @@ test_cases:
     content: chieu nay co lich gi khong
   expected:
     must_contain: ['14:00']
-    must_not_contain: ['09:00']   # buổi sáng, phải bị lọc
-    eval_notes: 'Hiểu input không dấu + chỉ liệt kê sự kiện buổi chiều 27/05 (14:00 ngân sách Q3, 16:00 call khách X). Không liệt kê 09:00 sáng.'
+    must_not_contain: ['09:00']
+    eval_notes: 'Hiểu input không dấu + chỉ liệt kê sự kiện buổi chiều 27/05 (14:00 ngân sách Q3, 16:00 call khách X). Không liệt kê buổi sáng.'
   expected_sources: ['calendar/2026-05-27/14:00', 'calendar/2026-05-27/16:00']
 - id: RL03
   use_case: UC-01
@@ -72,24 +79,104 @@ test_cases:
     content: cuộc họp 14h chiều nay với những ai
   expected:
     must_contain: [Nam, Lan]
-    eval_notes: 'Trả đúng thành phần họp ngân sách Q3 14:00 từ data (anh Nam CFO, chị Lan KTT). Không bịa người ngoài data.'
+    eval_notes: 'Trả đúng thành phần họp ngân sách Q3 14:00 ngày 27/05 (anh Nam CFO, chị Lan KTT). Không bịa người ngoài data.'
   expected_sources: ['calendar/2026-05-27/14:00']
+- id: RL12
+  use_case: UC-01
+  criteria: [TC-06, TC-02, TC-01]
+  name: Lịch tuần sau
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tuần sau tôi có lịch gì
+  expected:
+    must_contain: ['kế hoạch tháng 6']
+    must_not_contain: ['giao ban']
+    eval_notes: 'Liệt kê sự kiện tuần sau (01-07/06): Họp kế hoạch tháng 6 (01/6), Demo khách Z + Họp khẩn (02/6), Phỏng vấn PM (03/6), Tiệc tổng kết quý (05/6). Không kéo sự kiện tuần này.'
+  expected_sources: ['calendar/2026-06-01', 'calendar/2026-06-03', 'calendar/2026-06-05']
+- id: RL13
+  use_case: UC-01
+  criteria: [TC-06, TC-02, TC-01]
+  name: Lịch ngày mai
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: ngày mai tôi có cuộc họp nào không
+  expected:
+    must_contain: ['10:00']
+    eval_notes: 'Ngày mai = 28/05. Đúng 1 sự kiện: Review thiết kế UI 10:00 phòng B. Không bịa thêm.'
+  expected_sources: ['calendar/2026-05-28']
+- id: RL14
+  use_case: UC-14
+  criteria: [TC-06, TC-08, TC-01]
+  name: Cảnh báo trùng lịch tuần sau
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tuần sau tôi có bị trùng lịch nào không
+  expected:
+    must_contain: ['10:30']
+    eval_notes: 'Phát hiện XUNG ĐỘT ngày 02/06: Demo khách Z (10:30-11:30) trùng Họp khẩn xử lý sự cố (10:30-11:00). Phải chỉ ra trùng giờ và đề xuất xử lý. Không bịa.'
+  expected_sources: ['calendar/2026-06-02']
+- id: RL16
+  use_case: UC-01
+  criteria: [TC-06, TC-02, TC-01]
+  name: Lịch cả tuần này
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tuần này có những cuộc họp nào
+  expected:
+    must_contain: ['ngân sách', 'Singapore']
+    eval_notes: 'Liệt kê sự kiện tuần này 25-31/05, gồm họp ngân sách Q3 (27/5) và ký HĐ Singapore (30/5). Không kéo sự kiện tuần sau.'
+  expected_sources: ['calendar/2026-05-27', 'calendar/2026-05-30']
+- id: RL17
+  use_case: UC-01
+  criteria: [TC-06, TC-01]
+  name: Lịch sáng mai (lọc buổi)
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: sáng mai có lịch gì
+  expected:
+    must_contain: ['10:00']
+    eval_notes: 'Sáng mai = sáng 28/05. Review UI 10:00 (buổi sáng). Đúng buổi, đúng ngày.'
+  expected_sources: ['calendar/2026-05-28']
 
-# ───────── Task (structured) ─────────
+# ═══════════════════ TASK (structured — _add_tasks trả toàn bộ, model tự lọc) ═══════════════════
 - id: RL04
   use_case: UC-02
   criteria: [TC-02, TC-01]
-  name: Task nào đang trễ
+  name: Task nào đang trễ (2 task quá hạn)
   type: rag_live
   language: vi
   turns:
   - role: user
     content: task nào đang trễ hạn
   expected:
-    must_contain: [khách C, '25']
-    must_not_contain: [proposal]   # đã xong, không phải trễ
-    eval_notes: 'Chỉ ra đúng task quá hạn: Soạn hợp đồng khách C (hạn 25/5, đang làm). Không kể task đã xong (proposal) hay chưa tới hạn.'
-  expected_sources: ['task/Soạn hợp đồng khách C']
+    must_contain: ['khách C', 'hóa đơn']
+    must_not_contain: [proposal]
+    eval_notes: 'Có ĐÚNG 2 task quá hạn: Soạn hợp đồng khách C (25/5, đang làm) và Thanh toán hóa đơn nhà cung cấp (22/5, chưa làm). KHÔNG kể task đã xong (proposal, nộp thuế) hay chưa tới hạn.'
+  expected_sources: ['task/Soạn hợp đồng khách C', 'task/Thanh toán hóa đơn nhà cung cấp']
+- id: RL18
+  use_case: UC-02
+  criteria: [TC-01, TC-02]
+  name: Đếm số task quá hạn
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tôi có bao nhiêu việc đang quá hạn
+  expected:
+    must_contain: ['2']
+    must_not_contain: [proposal]
+    eval_notes: 'Trả đúng số 2 (khách C 25/5 + hóa đơn NCC 22/5). Không tính task đã xong hay chưa tới hạn. Lý tưởng gọi python_exec để đếm.'
+  expected_sources: ['task/Soạn hợp đồng khách C', 'task/Thanh toán hóa đơn nhà cung cấp']
 - id: RL05
   use_case: UC-02
   criteria: [TC-02, TC-06, TC-01]
@@ -100,11 +187,66 @@ test_cases:
   - role: user
     content: tuần này có việc gì gấp cần ưu tiên
   expected:
-    must_contain: [ngân sách, 'Q2']
-    eval_notes: 'Nêu các task ưu tiên cao tới hạn trong tuần 25-31/05: Duyệt ngân sách marketing (28/5), Gửi báo cáo Q2 HĐQT (29/5). Sắp theo độ gấp.'
+    must_contain: ['ngân sách', 'Q2']
+    eval_notes: 'Nêu các task ưu tiên cao tới hạn trong tuần 25-31/05: Duyệt ngân sách marketing (28/5), Chuẩn bị slide HĐQT (28/5), Gửi báo cáo Q2 HĐQT (29/5), Backup dữ liệu (31/5). Sắp theo độ gấp.'
   expected_sources: ['task/Duyệt ngân sách marketing', 'task/Gửi báo cáo Q2 cho HĐQT']
+- id: RL19
+  use_case: UC-06
+  criteria: [TC-02, TC-01]
+  name: Task ưu tiên cao
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: liệt kê các việc ưu tiên cao của tôi
+  expected:
+    must_contain: ['ngân sách']
+    must_not_contain: ['blog']
+    eval_notes: 'Chỉ liệt kê task priority CAO (khách C, hóa đơn NCC, ngân sách mkt, slide HĐQT, báo cáo Q2, backup). KHÔNG kể việc ưu tiên thấp (blog, review CV).'
+  expected_sources: ['task/Duyệt ngân sách marketing', 'task/Gửi báo cáo Q2 cho HĐQT', 'task/Backup dữ liệu hệ thống']
+- id: RL20
+  use_case: UC-02
+  criteria: [TC-02, TC-01]
+  name: Task của phòng HR
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: phòng HR đang có những việc gì
+  expected:
+    must_contain: ['CV', 'tuyển dụng']
+    must_not_contain: [website, marketing]
+    eval_notes: 'Lọc đúng task assignee HR: Review CV ứng viên (31/5), Lên kế hoạch tuyển dụng Q3 (03/6). Không kể task phòng khác.'
+  expected_sources: ['task/Review CV ứng viên', 'task/Lên kế hoạch tuyển dụng Q3']
+- id: RL21
+  use_case: UC-05
+  criteria: [TC-01, TC-02]
+  name: Task Minh phụ trách
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: Minh đang phụ trách những task nào
+  expected:
+    must_contain: ['báo cáo Q2', 'slide']
+    eval_notes: 'Lọc đúng task assignee Minh (kế toán): Gửi báo cáo Q2 cho HĐQT (29/5, đang làm), Chuẩn bị slide họp HĐQT (28/5, đang làm). Không gán nhầm task người khác.'
+  expected_sources: ['task/Gửi báo cáo Q2 cho HĐQT', 'task/Chuẩn bị slide họp HĐQT']
+- id: RL23
+  use_case: UC-05
+  criteria: [TC-01, TC-02]
+  name: Trạng thái task cập nhật website
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: task cập nhật website xong chưa
+  expected:
+    must_contain: ['đang làm']
+    must_not_contain: ['đã xong', 'hoàn thành']
+    eval_notes: 'Theo data: Cập nhật website trạng thái ĐANG LÀM (chưa xong). Trả lời thẳng Có/Chưa: chưa xong, đang làm. Không khẳng định đã hoàn thành.'
+  expected_sources: ['task/Cập nhật website']
 - id: RL06
-  use_case: UC-04
+  use_case: UC-05
   criteria: [TC-01, TC-02]
   name: Trạng thái báo cáo Q2 của Minh
   type: rag_live
@@ -114,11 +256,11 @@ test_cases:
     content: Minh gửi báo cáo Q2 cho HĐQT chưa
   expected:
     must_contain: [Minh]
-    must_not_contain: [đã gửi, đã nộp]   # task mới 'đang làm', chưa xong
+    must_not_contain: [đã gửi, đã nộp]
     eval_notes: 'Theo data task: "Gửi báo cáo Q2 cho HĐQT" assignee Minh, trạng thái ĐANG LÀM (chưa xong). Phải nói chưa hoàn thành, không khẳng định đã gửi.'
   expected_sources: ['task/Gửi báo cáo Q2 cho HĐQT']
 
-# ───────── Email (structured + semantic) ─────────
+# ═══════════════════ EMAIL (structured, lọc theo tên người) ═══════════════════
 - id: RL07
   use_case: UC-07
   criteria: [TC-01, TC-02, TC-04]
@@ -132,8 +274,61 @@ test_cases:
     must_contain: ['12%', '80 triệu']
     eval_notes: 'Tóm tắt đúng email anh Tuấn (27/5 08:15): giá server giảm 12%, cần duyệt ngân sách 80 triệu trước thứ 5. Không bịa chi tiết ngoài email.'
   expected_sources: ['email/anh Tuấn']
+- id: RL24
+  use_case: UC-07
+  criteria: [TC-01, TC-02]
+  name: Email anh Minh nói gì
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: anh Minh kế toán có gửi email gì không, nói gì
+  expected:
+    must_contain: ['Q2', 'dòng tiền']
+    must_not_contain: ['đã gửi xong', 'đã hoàn thành']
+    eval_notes: 'Tóm tắt email anh Minh (27/5): đang hoàn thiện báo cáo Q2, dự kiến gửi trước 29/5, còn chờ số liệu dòng tiền từ chị Lan. Không bịa.'
+  expected_sources: ['email/anh Minh']
+- id: RL25
+  use_case: UC-07
+  criteria: [TC-01, TC-02]
+  name: Email chị Hà Marketing
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: chị Hà bên marketing gửi email đề xuất gì
+  expected:
+    must_contain: ['150', 'quảng cáo']
+    eval_notes: 'Tóm tắt email chị Hà (26/5): đề xuất tăng ngân sách quảng cáo tháng 6 lên 150 triệu cho campaign sản phẩm mới. Không bịa số khác.'
+  expected_sources: ['email/chị Hà']
+- id: RL26
+  use_case: UC-07
+  criteria: [TC-01, TC-02]
+  name: Email đối tác Hàn Quốc ông Park
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: ông Park đối tác Hàn Quốc gửi email gì
+  expected:
+    must_contain: ['29', 'hợp tác']
+    eval_notes: 'Tóm tắt email ông Park (25/5): đề nghị gặp BGĐ chiều 29/5 bàn hợp tác phân phối tại Hàn Quốc. Không bịa.'
+  expected_sources: ['email/ông Park']
+- id: RL27
+  use_case: UC-07
+  criteria: [TC-01, TC-02]
+  name: Email anh Dũng IT
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: anh Dũng IT thông báo gì qua email
+  expected:
+    must_contain: ['bảo trì', '30']
+    eval_notes: 'Tóm tắt email anh Dũng (27/5): hệ thống bảo trì 22h-24h thứ Bảy 30/5, email và lịch tạm gián đoạn. Không bịa.'
+  expected_sources: ['email/anh Dũng']
 
-# ───────── Docs (semantic) ─────────
+# ═══════════════════ DOCS (semantic — bge-m3) ═══════════════════
 - id: RL08
   use_case: UC-08
   criteria: [TC-01, TC-02]
@@ -145,8 +340,35 @@ test_cases:
     content: lợi nhuận sau thuế quý 1 năm nay là bao nhiêu
   expected:
     must_contain: ['5.84']
-    must_not_contain: ['48.2', '7.3']   # doanh thu / LN trước thuế — không nhầm
+    must_not_contain: ['48.2', '7.3']
     eval_notes: 'Trích đúng từ báo cáo tài chính Q1: lợi nhuận sau thuế 5.84 tỷ. KHÔNG nhầm với doanh thu 48.2 tỷ hay LN trước thuế 7.3 tỷ.'
+  expected_sources: ['docs/bao_cao_tai_chinh']
+- id: RL32
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Doanh thu thuần Q1
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: doanh thu thuần quý 1 là bao nhiêu
+  expected:
+    must_contain: ['48.2']
+    must_not_contain: ['5.84']
+    eval_notes: 'Trích đúng doanh thu thuần Q1 = 48.2 tỷ. Không nhầm với lợi nhuận sau thuế 5.84 tỷ.'
+  expected_sources: ['docs/bao_cao_tai_chinh']
+- id: RL33
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Số dư tiền cuối kỳ Q1
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: số dư tiền cuối kỳ quý 1 là bao nhiêu
+  expected:
+    must_contain: ['23.4']
+    eval_notes: 'Trích đúng số dư tiền cuối kỳ = 23.4 tỷ từ phần Dòng tiền của báo cáo TC Q1. Không bịa số.'
   expected_sources: ['docs/bao_cao_tai_chinh']
 - id: RL09
   use_case: UC-08
@@ -161,8 +383,74 @@ test_cases:
     must_contain: ['22/03', MOU]
     eval_notes: 'Trả đúng nội dung biên bản ABC 15/03: ABC đồng ý ký MOU vào 22/03/2026, đại diện ông Tan/bà Lee. Không bịa.'
   expected_sources: ['docs/bien_ban_hop_abc']
+- id: RL34
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Giá trị hợp đồng ABC
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: hợp đồng giai đoạn 1 với đối tác ABC trị giá bao nhiêu
+  expected:
+    must_contain: ['2,5']
+    eval_notes: 'Trích đúng giá trị hợp đồng giai đoạn 1 với ABC = 2,5 tỷ đồng từ biên bản. Không bịa.'
+  expected_sources: ['docs/bien_ban_hop_abc']
+- id: RL28
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Công tác phí nước ngoài
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: đi công tác nước ngoài được phụ cấp bao nhiêu một ngày
+  expected:
+    must_contain: ['1.5', 'triệu']
+    must_not_contain: ['500']
+    eval_notes: 'Trích đúng quy định công tác phí: nước ngoài 1.500.000đ/ngày (1,5 triệu). KHÔNG nhầm với mức trong nước 500.000đ.'
+  expected_sources: ['docs/quy_dinh_cong_tac_phi']
+- id: RL29
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Số ngày phép năm
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: một năm tôi được nghỉ phép bao nhiêu ngày
+  expected:
+    must_contain: ['12']
+    eval_notes: 'Trích đúng chính sách nghỉ phép: 12 ngày phép có lương/năm. Có thể nêu thêm thâm niên +1 ngày/5 năm.'
+  expected_sources: ['docs/chinh_sach_nghi_phep']
+- id: RL30
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Tiến độ dự án Alpha
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: dự án Alpha tiến độ tới đâu rồi
+  expected:
+    must_contain: ['65']
+    eval_notes: 'Trích đúng báo cáo tiến độ Alpha: 65% hoàn thành, dự kiến xong MVP 30/06 (chậm 2 tuần). Không bịa số.'
+  expected_sources: ['docs/bao_cao_tien_do_du_an_alpha']
+- id: RL31
+  use_case: UC-08
+  criteria: [TC-01, TC-02]
+  name: Quyết định họp giao ban 20/5
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: cuộc họp giao ban ngày 20 tháng 5 quyết định những gì
+  expected:
+    must_contain: ['tháng 7']
+    eval_notes: 'Trích đúng biên bản giao ban 20/5: nâng KPI doanh số 10%, tuyển 3 kỹ sư backend Q3, dời ra mắt sản phẩm sang tháng 7. Không bịa.'
+  expected_sources: ['docs/bien_ban_hop_giao_ban']
 
-# ───────── REFUSE: corpus KHÔNG có data → phải từ chối, không bịa ─────────
+# ═══════════════════ REFUSE / EDGE — corpus KHÔNG có data → phải từ chối, không bịa ═══════════════════
 - id: RL10
   use_case: UC-07
   criteria: [TC-01, TC-08]
@@ -176,6 +464,19 @@ test_cases:
     must_not_contain: [chị Hương nói, chị Hương viết, theo email chị Hương]
     eval_notes: 'CRITICAL: corpus KHÔNG có email chị Hương → phải nói chưa có/không tìm thấy, KHÔNG bịa nội dung. Tương phản RL07 (có email anh Tuấn).'
   expected_sources: []
+- id: RL35
+  use_case: UC-07
+  criteria: [TC-01, TC-08]
+  name: '[REFUSE] Email người không tồn tại (chị Vân)'
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: chị Vân phòng kế toán có gửi email gì cho tôi không
+  expected:
+    must_not_contain: [chị Vân nói, theo email chị Vân, chị Vân viết]
+    eval_notes: 'CRITICAL: corpus KHÔNG có người gửi tên Vân → phải nói chưa tìm thấy email nào của chị Vân, KHÔNG bịa. (Có anh Minh nhưng không phải Vân.)'
+  expected_sources: []
 - id: RL11
   use_case: UC-01
   criteria: [TC-01, TC-08]
@@ -187,5 +488,18 @@ test_cases:
     content: lịch họp với đối tác Nhật Bản chiều mai mấy giờ
   expected:
     must_not_contain: [phòng họp, '14:', '15:']
-    eval_notes: 'CRITICAL: corpus không có cuộc họp với đối tác Nhật → phải nói chưa có thông tin/lịch này, KHÔNG bịa giờ/địa điểm.'
+    eval_notes: 'CRITICAL: corpus không có cuộc họp với đối tác Nhật chiều 28/5 → phải nói chưa có lịch này, KHÔNG bịa giờ/địa điểm. (Có đối tác Hàn Quốc 29/5 nhưng KHÁC.)'
+  expected_sources: []
+- id: RL36
+  use_case: UC-01
+  criteria: [TC-06, TC-08, TC-01]
+  name: '[REFUSE] Tối nay không có lịch'
+  type: rag_live
+  language: vi
+  turns:
+  - role: user
+    content: tối nay tôi có lịch gì không
+  expected:
+    must_not_contain: ['ngân sách', 'giao ban', 'Call khách']
+    eval_notes: 'Tối nay = buổi tối 27/05 (sau 18h). Các sự kiện 27/5 đều trước 18h → không có lịch buổi tối. Phải trả lời không có lịch tối nay, KHÔNG kéo sự kiện ban ngày.'
   expected_sources: []

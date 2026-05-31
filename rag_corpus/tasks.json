@@ -1,8 +1,14 @@
 [
+  {"title": "Thanh toán hóa đơn nhà cung cấp", "due_date": "2026-05-22", "status": "chưa làm", "priority": "cao", "assignee": "Kế toán"},
+  {"title": "Nộp tờ khai thuế tháng 4", "due_date": "2026-05-20", "status": "đã xong", "priority": "cao", "assignee": "Kế toán"},
   {"title": "Soạn hợp đồng khách C", "due_date": "2026-05-25", "status": "đang làm", "priority": "cao", "assignee": "Phòng Pháp chế"},
   {"title": "Gửi proposal cho khách Y", "due_date": "2026-05-26", "status": "đã xong", "priority": "trung bình", "assignee": "Sales"},
   {"title": "Duyệt ngân sách marketing", "due_date": "2026-05-28", "status": "chưa làm", "priority": "cao", "assignee": "Marketing"},
+  {"title": "Chuẩn bị slide họp HĐQT", "due_date": "2026-05-28", "status": "đang làm", "priority": "cao", "assignee": "Minh (kế toán)"},
   {"title": "Gửi báo cáo Q2 cho HĐQT", "due_date": "2026-05-29", "status": "đang làm", "priority": "cao", "assignee": "Minh (kế toán)"},
   {"title": "Cập nhật website", "due_date": "2026-05-30", "status": "đang làm", "priority": "trung bình", "assignee": "IT"},
-  {"title": "Review CV ứng viên", "due_date": "2026-05-31", "status": "chưa làm", "priority": "thấp", "assignee": "HR"}
+  {"title": "Backup dữ liệu hệ thống", "due_date": "2026-05-31", "status": "chưa làm", "priority": "cao", "assignee": "IT"},
+  {"title": "Review CV ứng viên", "due_date": "2026-05-31", "status": "chưa làm", "priority": "thấp", "assignee": "HR"},
+  {"title": "Lên kế hoạch tuyển dụng Q3", "due_date": "2026-06-03", "status": "chưa làm", "priority": "trung bình", "assignee": "HR"},
+  {"title": "Viết bài blog công ty", "due_date": "2026-06-10", "status": "chưa làm", "priority": "thấp", "assignee": "Marketing"}
 ]

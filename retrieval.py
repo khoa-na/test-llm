@@ -56,7 +56,7 @@ SEMANTIC_MIN_SCORE: float = float(os.environ.get("RAG_MIN_SCORE", "0.56"))
 # So query với các câu mẫu (anchor) của mỗi intent; max cosine ≥ ngưỡng → route vào đó.
 # bge-m3 query↔query same-intent ~0.6-0.8, cross-intent ~0.3-0.5 → 0.55 tách tốt.
 # Corpus/anchor đổi → tune qua env RAG_ROUTE_MIN_SCORE.
-ROUTE_MIN_SCORE: float = float(os.environ.get("RAG_ROUTE_MIN_SCORE", "0.58"))
+ROUTE_MIN_SCORE: float = float(os.environ.get("RAG_ROUTE_MIN_SCORE", "0.59"))
 
 # ───────────────────────────────────────────────
 # Embedding router — câu mẫu (anchor) cho mỗi intent.
@@ -84,10 +84,13 @@ _ROUTE_ANCHORS: dict[str, list[str]] = {
         "tiến độ báo cáo tới đâu rồi",
         "còn những việc gì phải làm trước deadline",
         "việc đó đã hoàn thành hay chưa xong",
+        "phòng ban đó đang có những công việc nào",
+        "ai đang phụ trách việc gì",
         # không dấu
         "task nao dang tre han chua xong",
         "tuan nay co viec gi gap can uu tien",
         "tien do cong viec bao cao toi dau",
+        "phong ban dang co nhung viec gi can lam",
     ],
     "emails": [
         "email của anh Tuấn nói gì",
@@ -252,13 +255,30 @@ def parse_date_range(query: str, ref: date | None = None) -> tuple[date, date] |
 
 
 def parse_time_of_day(query: str) -> tuple[str, str] | None:
-    """Lọc theo buổi: trả (start_hhmm, end_hhmm) hoặc None."""
+    """Lọc theo buổi: trả (start_hhmm, end_hhmm) hoặc None.
+
+    BẪY DẤU: 'tối' (buổi tối) và 'tôi' (đại từ) đều mất dấu → 'toi'. Nếu so trên bản
+    bỏ dấu thì MỌI câu chứa 'tôi' bị nhận nhầm là buổi tối → lọc rỗng lịch ban ngày.
+    → Query CÓ DẤU: so trên bản có dấu để phân biệt 'tối' ≠ 'tôi'.
+      Query KHÔNG DẤU (user gõ 'toi nay'): fallback so 'toi' theo RANH GIỚI TỪ
+      (chấp nhận nhập nhằng hiếm gặp khi cố tình gõ không dấu).
+    """
+    raw = query.lower()
     q = strip_accents(query)
-    if "sang" in q:
+    if raw != q:  # có dấu → phân biệt được tối/tôi, sáng, chiều
+        if "sáng" in raw:
+            return "00:00", "11:59"
+        if "chiều" in raw:
+            return "12:00", "17:59"
+        if "tối" in raw:
+            return "18:00", "23:59"
+        return None
+    # không dấu → ranh giới từ để 'toi' không dính vào từ khác
+    if re.search(r"(?<![a-z])sang(?![a-z])", q):
         return "00:00", "11:59"
-    if "chieu" in q:
+    if re.search(r"(?<![a-z])chieu(?![a-z])", q):
         return "12:00", "17:59"
-    if "toi" in q:
+    if re.search(r"(?<![a-z])toi(?![a-z])", q):
         return "18:00", "23:59"
     return None
 
@@ -412,7 +432,12 @@ class Retriever:
         return {intent for intent, kws in _KW_BY_INTENT.items() if _any_kw(norm, kws)}
 
     def _add_calendar(self, query: str, res: RetrievalResult):
-        rng = parse_date_range(query, self.reference_date) or (self.reference_date, self.reference_date)
+        rng = parse_date_range(query, self.reference_date)
+        if rng is None:
+            # KHÔNG có biểu thức ngày → KHÔNG mặc định "hôm nay". Tránh dump lịch hôm nay
+            # khi intent calendar lỡ fire trên câu không thật sự hỏi lịch (vd câu hỏi email).
+            # Hợp nguyên tắc "không tự ý đưa dữ liệu chưa được hỏi".
+            return
         rows = self.conn.execute(
             'SELECT * FROM calendar WHERE date BETWEEN ? AND ? ORDER BY date, start',
             (rng[0].isoformat(), rng[1].isoformat()),
@@ -453,7 +478,10 @@ class Retriever:
         # Nếu query KHÔNG nêu tên khớp sender nào → trả rỗng (không dump cả hộp thư).
         # Nhờ vậy hỏi người KHÔNG có trong store ("email chị Hương") → rỗng → bot refuse.
         qn = strip_accents(query)
-        matched = [r for r in rows if any(tok in qn for tok in _name_tokens(r["sender"]))]
+        # Khớp theo RANH GIỚI TỪ — token tên ngắn ('ha' của Hà, 'han' của Hàn) KHÔNG được
+        # match bên trong từ khác (vd 'nhân'→'nhan' chứa 'han'/'ha') gây kéo nhầm email.
+        matched = [r for r in rows
+                   if any(_kw_re(tok).search(qn) for tok in _name_tokens(r["sender"]))]
         if not matched:
             return
         lines = [f"- Từ {r['sender']} ({r['date']}) — {r['subject']}: {r['body']}" for r in matched]
