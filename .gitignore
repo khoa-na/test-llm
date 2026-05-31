@@ -225,3 +225,7 @@ eval/results/
 # Data nguồn / artifact xlsx (không version)
 Huấn luyện DS- V1.xlsx
 eval/usecase_status_*.xlsx
+
+# Spec nội bộ — không đẩy lên repo (giữ local)
+Chatbot_ThuKy_UseCases_EvalCriteria_v3.md
+Chatbot_ThuKy_UseCases_EvalCriteria_v3.xlsx
