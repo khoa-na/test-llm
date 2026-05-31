@@ -88,6 +88,7 @@ USE_RETRIEVAL_DEFAULT = env_config.get("USE_RETRIEVAL", "true").lower() == "true
 EMBED_MODEL = env_config.get("EMBED_MODEL", "BAAI/bge-m3")           # text-only, đa ngôn ngữ
 RETRIEVAL_TOP_K = int(env_config.get("RAG_TOP_K", "4"))
 RAG_MIN_SCORE = env_config.get("RAG_MIN_SCORE", "0.56")              # ngưỡng cosine lọc nhiễu semantic
+RAG_ROUTE_MIN_SCORE = env_config.get("RAG_ROUTE_MIN_SCORE", "0.58")  # ngưỡng cosine cho embedding router (intent)
 RAG_CORPUS_DIR = "/root/rag_corpus"                                  # nơi corpus được mount trong container
 # Ngày "hôm nay" của trợ lý — neo cho structured query (container chạy UTC, test neo ngày cố định).
 RAG_REFERENCE_DATE = env_config.get("RAG_REFERENCE_DATE", "2026-05-27")
@@ -118,6 +119,7 @@ image = (
         "RAG_CORPUS_DIR": RAG_CORPUS_DIR,
         "RAG_REFERENCE_DATE": RAG_REFERENCE_DATE,
         "RAG_MIN_SCORE": RAG_MIN_SCORE,
+        "RAG_ROUTE_MIN_SCORE": RAG_ROUTE_MIN_SCORE,
     })
     # Đưa module retrieval.py + corpus vào container (available lúc runtime).
     .add_local_python_source("retrieval")
@@ -385,7 +387,8 @@ class LLMServer:
         if getattr(self, "retriever", None) is None:
             return {"blocks": [], "sources": [], "error": "retriever_unavailable"}
         res = self.retriever.retrieve(query, top_k=top_k or RETRIEVAL_TOP_K)
-        return {"blocks": res.blocks, "sources": res.sources}
+        return {"blocks": res.blocks, "sources": res.sources,
+                "route_scores": self.retriever.route_scores(query)}
 
     # ───────────────────────────────────────────────
     # Public method

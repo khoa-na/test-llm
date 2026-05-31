@@ -116,6 +116,29 @@ def test_semantic_doc_retrieval():
         R.SEMANTIC_MIN_SCORE = old
 
 
+def test_embedding_router():
+    # Khi đã build_index → routing đi đường EMBEDDING (so query↔anchor), không keyword.
+    r = R.Retriever(reference_date=REF)
+    r.build_index(FakeEmbedder())
+
+    def route(q):
+        emb = R._l2_normalize(np.asarray(FakeEmbedder().encode([q]), dtype=np.float32))
+        return r._route(q, emb)
+
+    # query trùng anchor task → route tasks, KHÔNG nhầm calendar
+    intents = route("task nào đang trễ hạn")
+    assert "tasks" in intents and "calendar" not in intents, intents
+    # query lịch → calendar
+    assert "calendar" in route("mấy giờ tôi có cuộc họp"), "calendar nên được route"
+
+
+def test_keyword_fallback_when_no_embedder():
+    # Chưa build_index → không có embedder → fallback keyword (đường test offline).
+    r = R.Retriever(reference_date=REF)
+    assert r._route("lịch hôm nay", None) == {"calendar"}
+    assert "tasks" in r._route("task nào trễ hạn", None)
+
+
 def test_empty_when_no_match():
     # query không khớp keyword structured + không build_index → semantic skip
     r = R.Retriever(reference_date=REF)

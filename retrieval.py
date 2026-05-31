@@ -52,9 +52,58 @@ DEFAULT_TOP_K: int = int(os.environ.get("RAG_TOP_K", "4"))
 # 0.56 tách được TP (báo cáo/biên bản đúng ~0.59-0.73) khỏi nhiễu refuse (~0.40-0.55)
 # với bge-m3 trên corpus hiện tại. Corpus đổi/lớn lên → tune lại qua env RAG_MIN_SCORE.
 SEMANTIC_MIN_SCORE: float = float(os.environ.get("RAG_MIN_SCORE", "0.56"))
+# Ngưỡng cosine để 1 intent (calendar/task/email) được kích hoạt bằng EMBEDDING router.
+# So query với các câu mẫu (anchor) của mỗi intent; max cosine ≥ ngưỡng → route vào đó.
+# bge-m3 query↔query same-intent ~0.6-0.8, cross-intent ~0.3-0.5 → 0.55 tách tốt.
+# Corpus/anchor đổi → tune qua env RAG_ROUTE_MIN_SCORE.
+ROUTE_MIN_SCORE: float = float(os.environ.get("RAG_ROUTE_MIN_SCORE", "0.58"))
 
 # ───────────────────────────────────────────────
-# Router keywords (so khớp sau khi BỎ DẤU — để input không dấu "lich" vẫn khớp "lịch")
+# Embedding router — câu mẫu (anchor) cho mỗi intent.
+# Production: encode anchor 1 lần lúc build_index, route bằng cosine query↔anchor.
+# Ưu điểm so với keyword: hiểu NGHĨA, không vỡ vì bỏ dấu trùng âm
+# (vd "việc gấp" gần intent task, KHÔNG còn nhầm "gặp" của calendar).
+# ───────────────────────────────────────────────
+# Mỗi intent có anchor CÓ DẤU + biến thể KHÔNG DẤU. bge-m3 nhạy với dấu tiếng Việt
+# (cùng câu, bỏ dấu → cosine tụt ~0.35), mà user hay gõ không dấu → phải phủ cả 2 kiểu.
+_ROUTE_ANCHORS: dict[str, list[str]] = {
+    "calendar": [
+        "lịch họp hôm nay có những gì",
+        "mấy giờ tôi có cuộc họp",
+        "tôi có cuộc hẹn gặp ai không",
+        "sự kiện sắp tới trong tuần này",
+        "chiều nay có lịch gì",
+        # không dấu
+        "chieu nay co lich gi khong",
+        "hom nay co lich hop gi",
+        "may gio co cuoc hop",
+    ],
+    "tasks": [
+        "task nào đang trễ hạn",
+        "công việc nào cần ưu tiên trong tuần",
+        "tiến độ báo cáo tới đâu rồi",
+        "còn những việc gì phải làm trước deadline",
+        "việc đó đã hoàn thành hay chưa xong",
+        # không dấu
+        "task nao dang tre han chua xong",
+        "tuan nay co viec gi gap can uu tien",
+        "tien do cong viec bao cao toi dau",
+    ],
+    "emails": [
+        "email của anh Tuấn nói gì",
+        "có thư điện tử nào mới gửi đến không",
+        "ai vừa gửi mail cho tôi",
+        "nội dung email chị Lan gửi là gì",
+        # không dấu
+        "email cua anh noi gi",
+        "co mail nao moi gui den khong",
+    ],
+}
+
+# ───────────────────────────────────────────────
+# Router keywords — CHỈ dùng làm FALLBACK khi chưa build_index (test offline, không
+# có embedder). Production luôn đi đường embedding router ở trên.
+# So khớp sau khi BỎ DẤU để input không dấu "lich" vẫn khớp "lịch".
 # ───────────────────────────────────────────────
 _CAL_KW = ["lich", "hop", "cuoc hop", "calendar", "may gio", "gio nao", "gap", "hen", "su kien"]
 _TASK_KW = ["task", "viec", "cong viec", "deadline", "han", "tre", "qua han", "gap rut",
@@ -62,6 +111,7 @@ _TASK_KW = ["task", "viec", "cong viec", "deadline", "han", "tre", "qua han", "g
             # trạng thái/tiến độ + báo cáo (vd "Minh gửi báo cáo Q2 chưa")
             "bao cao", "trang thai", "tien do", "hoan thanh", "da xong", "da gui", "da nop"]
 _EMAIL_KW = ["email", "mail", "thu dien tu", "noi gi", "gui gi", "viet gi"]
+_KW_BY_INTENT = {"calendar": _CAL_KW, "tasks": _TASK_KW, "emails": _EMAIL_KW}
 
 # Honorific/chức danh — bỏ khi trích TÊN người từ trường sender (để lọc email đúng người).
 _HONORIFIC = {"anh", "chi", "em", "ong", "ba", "co", "chu", "bac", "ngai", "sep",
@@ -248,6 +298,8 @@ class Retriever:
         self.chunks: list[Chunk] = []
         self._embeddings: np.ndarray | None = None
         self._embedder = None
+        # {intent: ndarray (n_anchor, D) đã L2-normalize} — set ở build_index.
+        self._route_emb: dict[str, np.ndarray] | None = None
         self._load_structured()
         self._load_docs()
 
@@ -296,8 +348,13 @@ class Retriever:
         # (vd "email chị Hương" → lọt email chị Lan score 0.60). Giữ email structured-only.
 
     def build_index(self, embedder):
-        """Encode toàn bộ chunk. `embedder.encode(list[str]) -> ndarray (N, D)`."""
+        """Encode chunk + anchor router. `embedder.encode(list[str]) -> ndarray (N, D)`."""
         self._embedder = embedder
+        # Encode anchor của embedding router (1 lần). Kích hoạt routing theo nghĩa.
+        self._route_emb = {
+            intent: _l2_normalize(np.asarray(embedder.encode(sents), dtype=np.float32))
+            for intent, sents in _ROUTE_ANCHORS.items()
+        }
         if not self.chunks:
             self._embeddings = None
             return
@@ -306,19 +363,53 @@ class Retriever:
 
     # ----- query phase -----
     def retrieve(self, query: str, top_k: int = DEFAULT_TOP_K) -> RetrievalResult:
-        """Always-hybrid: gộp structured (theo router keyword) + semantic."""
-        res = RetrievalResult()
-        norm = strip_accents(query)
+        """Always-hybrid: structured (theo intent router) + semantic.
 
-        if _any_kw(norm, _CAL_KW):
+        Router intent ưu tiên EMBEDDING (so query↔anchor) khi đã build_index;
+        nếu chưa có embedder → fallback keyword. Query chỉ encode 1 lần, dùng
+        chung cho cả routing lẫn semantic search.
+        """
+        res = RetrievalResult()
+        q_emb = None
+        if self._embedder is not None:
+            q_emb = _l2_normalize(np.asarray(self._embedder.encode([query]), dtype=np.float32))
+
+        intents = self._route(query, q_emb)
+        if "calendar" in intents:
             self._add_calendar(query, res)
-        if _any_kw(norm, _TASK_KW):
+        if "tasks" in intents:
             self._add_tasks(query, res)
-        if _any_kw(norm, _EMAIL_KW):
+        if "emails" in intents:
             self._add_emails(query, res)
 
-        self._add_semantic(query, res, top_k)
+        self._add_semantic(query, res, top_k, q_emb)
         return res
+
+    def route_scores(self, query: str) -> dict[str, float]:
+        """DEBUG: trả điểm cosine cao nhất query↔anchor cho từng intent (để tune ngưỡng)."""
+        if self._embedder is None or not self._route_emb:
+            return {}
+        q = _l2_normalize(np.asarray(self._embedder.encode([query]), dtype=np.float32))
+        return {intent: round(float((emb @ q.T).max()), 3) for intent, emb in self._route_emb.items()}
+
+    def _route(self, query: str, q_emb: np.ndarray | None) -> set[str]:
+        """Chọn các intent structured cần truy vấn.
+
+        Có embedder + anchor → routing theo NGHĨA (cosine query↔anchor, max mỗi
+        intent ≥ ROUTE_MIN_SCORE). Ngược lại → fallback keyword (test offline).
+        """
+        if q_emb is not None and self._route_emb:
+            intents = set()
+            for intent, emb in self._route_emb.items():
+                if float((emb @ q_emb.T).max()) >= ROUTE_MIN_SCORE:
+                    intents.add(intent)
+            return intents
+        return self._route_keyword(query)
+
+    @staticmethod
+    def _route_keyword(query: str) -> set[str]:
+        norm = strip_accents(query)
+        return {intent for intent, kws in _KW_BY_INTENT.items() if _any_kw(norm, kws)}
 
     def _add_calendar(self, query: str, res: RetrievalResult):
         rng = parse_date_range(query, self.reference_date) or (self.reference_date, self.reference_date)
@@ -369,12 +460,13 @@ class Retriever:
         res.blocks.append("[Email — dữ liệu truy xuất]\n" + "\n".join(lines))
         res.sources += [f"email/{r['sender']}" for r in matched]
 
-    def _add_semantic(self, query: str, res: RetrievalResult, top_k: int):
+    def _add_semantic(self, query: str, res: RetrievalResult, top_k: int,
+                      q_emb: np.ndarray | None = None):
         if self._embeddings is None or self._embedder is None or not self.chunks:
             return
-        q = np.asarray(self._embedder.encode([query]), dtype=np.float32)
-        q = _l2_normalize(q)
-        scores = (self._embeddings @ q.T).ravel()
+        if q_emb is None:
+            q_emb = _l2_normalize(np.asarray(self._embedder.encode([query]), dtype=np.float32))
+        scores = (self._embeddings @ q_emb.T).ravel()
         order = np.argsort(-scores)[:top_k]
         for i in order:
             if scores[i] < SEMANTIC_MIN_SCORE:
