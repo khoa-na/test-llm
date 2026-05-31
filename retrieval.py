@@ -502,7 +502,9 @@ class Retriever:
             c = self.chunks[i]
             if c.source in res.sources:  # tránh trùng email đã có từ structured
                 continue
-            res.blocks.append(f"[Tài liệu truy xuất: {c.source} | score={scores[i]:.2f}]\n{c.text}")
+            # KHÔNG nhúng cosine score vào block: đó là chỉ số nội bộ (debug); để lọt vào
+            # prompt khiến model tưởng là dữ liệu và bịa (vd "dự án đạt điểm 0.62").
+            res.blocks.append(f"[Tài liệu truy xuất: {c.source}]\n{c.text}")
             res.sources.append(c.source)
 
 

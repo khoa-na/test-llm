@@ -407,8 +407,7 @@ test_cases:
     content: đi công tác nước ngoài được phụ cấp bao nhiêu một ngày
   expected:
     must_contain: ['1.5', 'triệu']
-    must_not_contain: ['500']
-    eval_notes: 'Trích đúng quy định công tác phí: nước ngoài 1.500.000đ/ngày (1,5 triệu). KHÔNG nhầm với mức trong nước 500.000đ.'
+    eval_notes: 'Trích đúng quy định công tác phí: nước ngoài 1.500.000đ/ngày (1,5 triệu). KHÔNG nhầm với mức trong nước 500.000đ (judge chấm ngữ nghĩa — không dùng must_not_contain "500" vì khớp nhầm trong "1.500.000").'
   expected_sources: ['docs/quy_dinh_cong_tac_phi']
 - id: RL29
   use_case: UC-08
@@ -500,6 +499,6 @@ test_cases:
   - role: user
     content: tối nay tôi có lịch gì không
   expected:
-    must_not_contain: ['ngân sách', 'giao ban', 'Call khách']
-    eval_notes: 'Tối nay = buổi tối 27/05 (sau 18h). Các sự kiện 27/5 đều trước 18h → không có lịch buổi tối. Phải trả lời không có lịch tối nay, KHÔNG kéo sự kiện ban ngày.'
+    must_not_contain: ['Họp ngân sách', 'giao ban', 'Call khách']
+    eval_notes: 'Tối nay = buổi tối 27/05 (sau 18h). Các sự kiện 27/5 đều trước 18h → không có lịch buổi tối. Phải trả lời không có lịch tối nay, KHÔNG kéo sự kiện LỊCH ban ngày (Họp ngân sách Q3/giao ban/Call khách X). Liệt kê task tương lai là lạc đề nhẹ, judge tự cân nhắc.'
   expected_sources: []
